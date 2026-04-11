@@ -30,3 +30,9 @@ logs/
 .DS_Store
 .vscode/
 .idea/
+
+# Review artifacts — briefs and reviewer outputs stay local, never committed.
+# They are useful during a review round but aren't history we need to carry.
+reviewBrief*.md
+codeReview*.md
+securityReview*.md
