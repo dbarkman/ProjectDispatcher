@@ -91,14 +91,14 @@ Create a minimal `src/index.ts` that exports an empty function — just enough f
 **Files:** `src/db/index.ts`, `src/db/migrations/001_init.sql`, `src/db/migrate.ts`
 
 **Description:**
-Implement the full SQLite schema from DESIGN.md section 7. Use `better-sqlite3` (sync API, single connection).
+Implement the full SQLite schema from DESIGN.md section 7. Use `better-sqlite3` (sync API).
 
 Create `src/db/index.ts`:
-- Exports a singleton database handle
-- Opens the database at a configurable path (default `~/Development/.tasks/tasks.db`)
-- Enables WAL mode (`PRAGMA journal_mode=WAL`)
-- Enables foreign keys (`PRAGMA foreign_keys=ON`)
-- Applies `PRAGMA auto_vacuum=INCREMENTAL`
+- Exports `openDatabase(path?)` factory — callers own the handle lifetime. The daemon (MVP-06) will call it exactly once at startup and pass the handle around; tests can open isolated `:memory:` handles. This replaces the original "singleton database handle" spec (rationale in the src file header — see Code Review #1 decision #5).
+- Default path is `~/Development/.tasks/tasks.db`, resolved via `os.homedir()` (never hardcoded).
+- Enables WAL mode (`PRAGMA journal_mode=WAL`).
+- Enables foreign keys (`PRAGMA foreign_keys=ON`) AND verifies the pragma stuck — throws and closes the handle if the effective value isn't `1`. Defense in depth against SQLite builds where the pragma can silently no-op.
+- Applies `PRAGMA auto_vacuum=INCREMENTAL`.
 
 Create `src/db/migrations/001_init.sql` with all eight tables from DESIGN.md section 7.1:
 - `project_types`

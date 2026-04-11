@@ -11,6 +11,18 @@ import { fileURLToPath } from 'node:url';
  */
 const MIGRATIONS_DIR = join(dirname(fileURLToPath(import.meta.url)), 'migrations');
 
+/**
+ * Migration filenames must match this convention: three-digit zero-padded
+ * sequence number, underscore, lowercase-letters/digits/underscores/hyphens,
+ * `.sql`. Example: `002_add_webhooks.sql`.
+ *
+ * The convention exists because `readdirSync().sort()` is lexicographic —
+ * `02_foo.sql` would sort between `001` and `002` instead of becoming file
+ * number 2. Enforcing the NNN prefix makes the sort order match the intended
+ * application order.
+ */
+const MIGRATION_FILENAME_RE = /^\d{3}_[a-z0-9_-]+\.sql$/;
+
 export interface MigrationResult {
   applied: string[];
   skipped: string[];
@@ -19,13 +31,26 @@ export interface MigrationResult {
 /**
  * Apply any pending SQL migrations in lexicographic filename order.
  *
- * Each migration runs inside its own transaction — if it fails, the file is
- * rolled back and no record is written to `schema_migrations`, so the next
- * run will retry it cleanly. Already-applied migrations are skipped.
+ * Each migration runs inside its own transaction. A failed migration rolls
+ * back cleanly and does not record itself in `schema_migrations`, so the
+ * next run retries it. Already-applied migrations are skipped.
  *
  * Sync file I/O is deliberate: this is one-shot startup work that runs
- * before the server binds. Per our coding principles, sync fs is only
+ * before the HTTP server binds. Per our coding principles, sync fs is only
  * acceptable in that window.
+ *
+ * **Filename convention:** files must match `NNN_name.sql` (see
+ * `MIGRATION_FILENAME_RE`). Any `.sql` file that doesn't match throws
+ * loudly — silently skipping a real migration because of a typo is
+ * exactly the class of bug that bites people in production.
+ *
+ * **Non-transactional statements are NOT supported.** Because each file
+ * runs inside a single `db.transaction()`, do NOT include statements that
+ * cannot run inside a transaction — `VACUUM`, `CREATE VIRTUAL TABLE USING
+ * fts5`, and certain `PRAGMA` calls will fail with a confusing SQLite
+ * error. If you genuinely need one, invent a convention at that time
+ * (e.g. a `.no-tx.sql` suffix this function can detect) — don't build that
+ * flexibility preemptively.
  */
 export function runMigrations(db: Database): MigrationResult {
   db.exec(`
@@ -41,9 +66,20 @@ export function runMigrations(db: Database): MigrationResult {
     ),
   );
 
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter((f) => f.endsWith('.sql'))
-    .sort();
+  // Read every .sql file in the migrations directory, then validate that each
+  // matches the naming convention. Non-.sql files (e.g. editor swap files like
+  // `.swp`, `#001_init.sql#` emacs autosaves, `.bak` copies) are ignored
+  // silently because they can never be intended as migrations. Malformed .sql
+  // filenames fail loudly.
+  const sqlFiles = readdirSync(MIGRATIONS_DIR).filter((f) => f.endsWith('.sql'));
+  const malformed = sqlFiles.filter((f) => !MIGRATION_FILENAME_RE.test(f));
+  if (malformed.length > 0) {
+    throw new Error(
+      `Migration filename(s) do not match NNN_name.sql convention: ${malformed.join(', ')}. ` +
+        `Rename to e.g. 002_add_webhooks.sql or remove the file.`,
+    );
+  }
+  const files = sqlFiles.sort();
 
   const applied: string[] = [];
   const skipped: string[] = [];

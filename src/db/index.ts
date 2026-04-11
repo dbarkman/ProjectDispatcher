@@ -1,3 +1,19 @@
+// Database handle factory for Project Dispatcher.
+//
+// NOTE ON SPEC DEVIATION: DEVELOPMENT.md MVP-02 originally specified
+// "exports a singleton database handle." Implementation chose a
+// caller-owned-lifetime factory instead. Rationale:
+//   - Tests open isolated `:memory:` handles with no global state leaking
+//     between the vitest cases.
+//   - Daemon shutdown hooks (SIGTERM → db.close() to flush WAL) are
+//     cleaner when the daemon explicitly owns the handle.
+//   - Future use cases (e.g. a read-only replica for the inbox query)
+//     would have to unwind a singleton assumption.
+// The daemon startup (MVP-06) will call openDatabase() exactly once and
+// pass the handle around — that's the "single handle in practice"
+// equivalent of a singleton without the global state. DEVELOPMENT.md
+// has been updated to match. See Code Review #1 decision #5.
+
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';

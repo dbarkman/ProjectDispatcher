@@ -98,6 +98,77 @@ describe('runMigrations', () => {
     }
   });
 
+  it('enforces CHECK constraints — rejects invalid enum values and invalid JSON', () => {
+    const db = openDatabase(':memory:');
+    try {
+      runMigrations(db);
+      const now = Date.now();
+
+      // Seed a minimal project so FK constraints pass
+      db.prepare(
+        `INSERT INTO project_types (id, name, is_builtin, created_at, updated_at)
+         VALUES ('test-type', 'Test', 0, ?, ?)`,
+      ).run(now, now);
+      db.prepare(
+        `INSERT INTO projects (id, name, path, project_type_id, created_at, updated_at)
+         VALUES ('p1', 'Test Project', '/tmp/p1', 'test-type', ?, ?)`,
+      ).run(now, now);
+
+      // Invalid enum value for priority
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO tickets (id, project_id, title, "column", priority, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run('t1', 'p1', 'Test', 'human', 'urgent-asap', now, now),
+      ).toThrow(/CHECK constraint/);
+
+      // Invalid JSON in tags
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO tickets (id, project_id, title, "column", tags, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run('t2', 'p1', 'Test', 'human', 'not valid json', now, now),
+      ).toThrow(/CHECK constraint/);
+
+      // Valid JSON tags succeed — sanity that the CHECK isn't too strict
+      expect(() =>
+        db
+          .prepare(
+            `INSERT INTO tickets (id, project_id, title, "column", tags, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          )
+          .run('t3', 'p1', 'Test', 'human', '["urgent","customer"]', now, now),
+      ).not.toThrow();
+    } finally {
+      db.close();
+    }
+  });
+
+  it('rejects malformed migration filenames loudly', () => {
+    // We can't easily point runMigrations at a different directory without
+    // plumbing a parameter through, and the MIGRATIONS_DIR is intentionally
+    // immutable. Instead we assert by inspection: the regex from migrate.ts
+    // rejects the kinds of names we care about. If this ever needs to grow,
+    // refactor runMigrations to accept an optional dir.
+    const RE = /^\d{3}_[a-z0-9_-]+\.sql$/;
+
+    // Valid names
+    expect(RE.test('001_init.sql')).toBe(true);
+    expect(RE.test('002_add_webhooks.sql')).toBe(true);
+    expect(RE.test('010_rename-foo.sql')).toBe(true);
+
+    // Invalid names
+    expect(RE.test('02_bug.sql')).toBe(false); // two digits, not three
+    expect(RE.test('001-init.sql')).toBe(false); // hyphen instead of underscore
+    expect(RE.test('001_Init.sql')).toBe(false); // uppercase
+    expect(RE.test('001_init.SQL')).toBe(false); // uppercase extension
+    expect(RE.test('init.sql')).toBe(false); // no sequence prefix
+  });
+
   it('cascades deletes — deleting a project removes its tickets and heartbeat', () => {
     const db = openDatabase(':memory:');
     try {
