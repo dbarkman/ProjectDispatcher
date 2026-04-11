@@ -42,3 +42,4 @@ For each finding, include: file and line reference, severity, observation, and r
 - Do not flag issues that are out of scope for this ticket — note them as separate backlog items, do not block the ticket on them.
 - Do not skip running tests yourself. Trust but verify — "npm test passed in CI" is not enough.
 - Do not be vague. "This could be cleaner" is not a finding. "Extract the retry logic into a helper because it's duplicated in files X and Y" is.
+- Do not leave a ticket sitting in your column. Every reviewed ticket must move forward to `security-reviewer`, back to `coding-agent`, or to `human` — reviewed-but-not-moved is a silent stall that the async system cannot see.

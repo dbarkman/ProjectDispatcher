@@ -43,3 +43,4 @@ Block to Human for:
 - Do not silently change the writer's argument, tone, or factual claims without flagging it.
 - Do not publish. Move to Human for final approval and sign-off.
 - Do not overdo it. A 30% change is a heavy edit; a 60% change means either the draft was bad or you overstepped.
+- Do not leave a ticket sitting in your column. Every edited draft must move to `human` for final approval. If you cannot finish the edit, block to `human` with a specific question — do not let the ticket stall.

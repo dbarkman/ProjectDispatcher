@@ -17,6 +17,18 @@ import type { Database } from 'better-sqlite3';
 
 type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan';
 
+/**
+ * Closed set of Claude model IDs that agents are allowed to run as. Narrowing
+ * this to a union catches typos (`claude-opus-4-7`, `claude-sonnet-4.6`,
+ * `gpt-4`) at compile time, since there is no DB CHECK on `agent_types.model`
+ * and no Zod validation at the seed layer. When Anthropic ships a new model
+ * that we want to use, add it here — the friction is the feature.
+ */
+type ClaudeModel =
+  | 'claude-opus-4-6'
+  | 'claude-sonnet-4-6'
+  | 'claude-haiku-4-5-20251001';
+
 interface ProjectTypeSeed {
   id: string;
   name: string;
@@ -28,7 +40,7 @@ interface AgentTypeSeed {
   name: string;
   description: string;
   systemPromptPath: string; // filename inside ~/Development/.tasks/prompts/
-  model: string;
+  model: ClaudeModel;
   allowedTools: string[]; // JSON-encoded at insert time
   permissionMode: PermissionMode;
   timeoutMinutes: number;
@@ -227,6 +239,14 @@ const PROJECT_TYPE_COLUMNS: ProjectTypeColumnSeed[] = [
   { projectTypeId: 'research', columnId: 'done', name: 'Done', agentTypeId: null, order: 2 },
 
   // personal: backlog → in-progress → done (no agents)
+  //
+  // NOTE: this project type uses column_id='human' (not 'backlog') on purpose.
+  // The unified-inbox query in the UI selects every ticket where column='human',
+  // so personal tickets land in the same inbox as human-column tickets from the
+  // other project types — no special-case routing. The display name 'Backlog' is
+  // per-project-type, so the UI shows "Backlog" for personal and "Human" for the
+  // other types even though the column_id matches. Do not rename this to
+  // 'backlog' without also changing the inbox query and every other reference.
   { projectTypeId: 'personal', columnId: 'human', name: 'Backlog', agentTypeId: null, order: 0 },
   {
     projectTypeId: 'personal',

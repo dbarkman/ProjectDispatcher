@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { existsSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDatabase } from './index.js';
 import { runMigrations } from './migrate.js';
@@ -177,7 +177,15 @@ describe('seedBuiltins', () => {
     }
   });
 
-  it('every seeded agent_type system_prompt_path points at a real file in src/prompts/defaults/', () => {
+  it('every seeded agent_type system_prompt_path points at a real file contained within src/prompts/defaults/', () => {
+    // This test has two jobs:
+    //   1. Verify the expected files actually exist (catches missing files
+    //      and typos in system_prompt_path).
+    //   2. Verify no seeded value escapes the prompts directory via `..`
+    //      traversal or an absolute path. The agent runtime (MVP-18+) will
+    //      ultimately be the enforcement point for traversal, but having
+    //      the seed test also reject traversal means a bad future seed
+    //      value fails in CI long before it could reach runtime.
     const db = openDatabase(':memory:');
     try {
       runMigrations(db);
@@ -190,8 +198,15 @@ describe('seedBuiltins', () => {
       ).map((r) => r.system_prompt_path);
 
       expect(paths).toHaveLength(9);
+
+      const resolvedPromptsDir = resolve(PROMPTS_DIR);
       for (const p of paths) {
-        expect(existsSync(join(PROMPTS_DIR, p))).toBe(true);
+        const fullPath = resolve(PROMPTS_DIR, p);
+        // Containment check: the resolved absolute path must start with the
+        // resolved prompts dir + separator. Without the separator suffix,
+        // '/srv/prompts_escape/foo' would falsely pass startsWith('/srv/prompts').
+        expect(fullPath.startsWith(resolvedPromptsDir + sep)).toBe(true);
+        expect(existsSync(fullPath)).toBe(true);
       }
     } finally {
       db.close();

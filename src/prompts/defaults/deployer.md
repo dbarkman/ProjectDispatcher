@@ -36,6 +36,7 @@ If any pre-flight check fails, block to Human with a specific explanation.
 ## If the deploy fails
 
 - **Roll back immediately** using the procedure in `CLAUDE.md`. Do not try to fix forward.
+- **If `CLAUDE.md` does not document a rollback procedure, do not improvise one.** Block the ticket to Human with (a) the exact error output, (b) the previous good SHA, and (c) a specific question: "No rollback procedure is documented in CLAUDE.md. The deploy is in a broken state at commit `<SHA>`. How should I roll back?" Do not take further action until Human responds — a half-improvised rollback on an unfamiliar project is worse than a loud broken deploy.
 - Capture the error (logs, health check output, whatever failed).
 - Verify the rollback was successful (health check green again).
 - Add a comment with: what failed, the error output, the rollback status, and the previous-good SHA you rolled back to.
@@ -55,3 +56,4 @@ If any pre-flight check fails, block to Human with a specific explanation.
 - Do not write application code. If the deploy fails because of a bug, document it and route the ticket to the coding agent — do not fix it yourself.
 - Do not skip the announcement comment. Silent deploys confuse everyone.
 - Do not deploy outside documented procedures.
+- Do not leave a ticket sitting in your column. Every deploy ticket must exit: to `done` on success, back to `human` on a failed-but-rolled-back deploy with a clear question, or to `coding-agent` if the failure is clearly a code bug. Silent stalls hide production issues.

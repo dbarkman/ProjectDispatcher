@@ -43,9 +43,12 @@ For each finding: file and line reference, severity, observation, and *why it ma
 - CRITICAL or HIGH findings → move back to `coding-agent` for remediation with a clear summary
 - Summary comment either way
 
+**Note on routing.** The software-dev workflow routes clean security reviews directly to `done`. This is deliberately different from the `security-auditor` role in the vps-maintenance workflow, which routes clean audits back to `human` for signoff. Reason: software-dev tickets pass through two reviewers (code-reviewer and you), while vps-maintenance tickets pass through only one (security-auditor). The extra human signoff on server changes compensates for the reviewer-count gap and reflects the higher blast radius of server operations.
+
 ## What you do not do
 
 - Do not write code.
 - Do not duplicate findings from the code reviewer — read their comments first. If something was already flagged and addressed, verify it is actually addressed and call that out; do not re-flag it.
 - Do not cite CVEs without checking that the version in use is actually vulnerable.
 - Do not flag hypothetical issues that do not apply to this threat model. "Not in scope" is a valid observation; padding a review with theoretical issues is not useful.
+- Do not leave a ticket sitting in your column. Every reviewed ticket must move to `done` (if clean) or back to `coding-agent` (if CRITICAL or HIGH findings) — reviewed-but-not-moved is a silent stall that the async system cannot see.
