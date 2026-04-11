@@ -1,0 +1,45 @@
+{
+  "name": "projectdispatcher",
+  "version": "0.0.1",
+  "description": "Async ticket-based orchestration between humans and AI agents across multiple projects.",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "dispatch": "./dist/index.js"
+  },
+  "main": "./dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write ."
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@fastify/static": "^9.1.0",
+    "better-sqlite3": "^12.8.0",
+    "chokidar": "^5.0.0",
+    "commander": "^14.0.3",
+    "fastify": "^5.8.4",
+    "pino": "^10.3.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^25.6.0",
+    "eslint": "^10.2.0",
+    "eslint-config-prettier": "^10.1.8",
+    "pino-pretty": "^13.1.3",
+    "prettier": "^3.8.2",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2",
+    "typescript-eslint": "^8.58.1",
+    "vitest": "^4.1.4"
+  }
+}
