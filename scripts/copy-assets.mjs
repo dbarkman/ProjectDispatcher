@@ -7,7 +7,10 @@
 // from anywhere else or it will silently copy nothing.
 import { cp } from 'node:fs/promises';
 
-const pairs = [['src/db/migrations', 'dist/db/migrations']];
+const pairs = [
+  ['src/db/migrations', 'dist/db/migrations'],
+  ['src/prompts/defaults', 'dist/prompts/defaults'],
+];
 
 for (const [from, to] of pairs) {
   await cp(from, to, { recursive: true, force: true });
