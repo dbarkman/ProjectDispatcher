@@ -97,6 +97,26 @@ Publish to npm, put up a landing page at projectdispatcher.com, see if anyone el
 - **Follow HandyManagerHub's patterns.** Fastify conventions, Zod validation on every route, structured logging, same code style. Reuse what works.
 - **Don't build a UI framework.** htmx-first. If you find yourself writing a lot of client JS, step back.
 
+## Coding Principles & KISS
+
+**Pragmatism and simplicity come first.** Always pick the simple option when there's a choice — it saves you in the long run. Never code something complex for the sake of complexity; that's just dumb. David is a pragmatic, simple programmer — match that style. Three similar lines beats a premature abstraction. No message queues when `setTimeout` works. No Postgres when SQLite is enough. No framework when a plain function does the job. Before reaching for a pattern, ask "is there a simpler way?" and take it.
+
+The rest of these are distilled from three rounds of external code + security reviews on HandyManagerHub. They exist to catch real bugs that real reviewers have flagged in David's codebases — they are not speculative best-practices. All of them apply to Project Dispatcher too.
+
+- **Zod at every boundary, from line one.** Every HTTP route body/params/query, every MCP tool input, every config file read, every subprocess stdout you parse from `claude -p`. Don't defer — retrofitting validation is expensive.
+- **Delete dead code, don't gate it.** No `if (DEV_MODE)` bypass paths, no commented-out "future" stubs, no test routes living next to real routes. If you need a dev tool, it lives in a separate file the daemon doesn't load. Gated code ships.
+- **Fail loud; route failures somewhere visible.** In PD this is already baked into the design: blocked or errored tickets route to the Human column, never left silently in an agent column. Enforce that in the scheduler from day one — every agent-run error path ends with "ticket moved to human + comment explaining why."
+- **`fs/promises`, never sync `fs`, in daemon code paths.** Sync I/O blocks the event loop. With chokidar watching `~/Development/`, agent subprocesses streaming output, and heartbeats ticking — a 50ms sync read can stall the scheduler. Sync is only acceptable during one-shot startup (reading migration files before the server binds).
+- **Secrets hygiene from the first commit.** `.gitignore` `.tasks/`, `*.db`, `*.log`, and any config examples before the first `git add`. No `.env.example` with real-looking values. Git history is forever.
+- **Cross-platform paths from day one.** `os.homedir()` + `path.join()`, never hardcoded `/Users/david/Development/...`. PD is designed to be installed by others on Linux eventually — don't bake in macOS-only assumptions.
+- **Principle of least privilege on the MCP surface.** Expose *only* the specific ticket operations agents need. No generic `execute_sql` tool, no `read_file_anywhere` tool. If an agent later needs something new, add a specific tool — don't broaden an existing one.
+- **Startup-time config validation with hard refusal.** Zod-check the config file and env overrides at boot. If something's missing or invalid, refuse to start with a specific error naming the field. Don't limp along and fail when the first request lands.
+- **Foreign keys on, and verified at startup.** SQLite's `PRAGMA foreign_keys=ON` is OFF by default. The schema migration sets it, but add a startup check that the pragma is actually on after the connection opens — don't just trust it. FK enforcement catches logic bugs before they become data bugs.
+- **Defense in depth on IDs.** Even in a single-user local tool, every ticket lookup should verify the project it belongs to. Cheap insurance against logic bugs now and a clean model when PD eventually needs per-project access rules.
+- **Strict TypeScript — no `any`, `noUncheckedIndexedAccess` on.** Second-order bugs from loose types and unchecked array access cost more than the time it takes to type things correctly.
+- **Don't batch too much work between reviews.** The natural review points for PD are roughly one phase at a time from DEVELOPMENT.md. Before writing a route, ask "what would the security reviewer flag?" — and preempt it.
+- **Push back on wrong review findings, after verifying.** Findings aren't gospel. Verify each one against current code before acting. Over-correcting on a false positive costs more than flagging it back.
+
 ## Not in the scope of V1 work
 
 - Mobile apps
