@@ -14,20 +14,12 @@
 // leave no partial state behind.
 
 import type { Database } from 'better-sqlite3';
+import type { ClaudeModel } from '../types.js';
+
+// ClaudeModel moved to ../types.ts so the config loader can reference the
+// same closed set — single source of truth for "models agents may run as."
 
 type PermissionMode = 'default' | 'acceptEdits' | 'bypassPermissions' | 'plan';
-
-/**
- * Closed set of Claude model IDs that agents are allowed to run as. Narrowing
- * this to a union catches typos (`claude-opus-4-7`, `claude-sonnet-4.6`,
- * `gpt-4`) at compile time, since there is no DB CHECK on `agent_types.model`
- * and no Zod validation at the seed layer. When Anthropic ships a new model
- * that we want to use, add it here — the friction is the feature.
- */
-type ClaudeModel =
-  | 'claude-opus-4-6'
-  | 'claude-sonnet-4-6'
-  | 'claude-haiku-4-5-20251001';
 
 interface ProjectTypeSeed {
   id: string;
