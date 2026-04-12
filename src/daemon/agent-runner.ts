@@ -273,28 +273,30 @@ export async function runAgent(
        WHERE id = ?`,
     ).run(result.exitStatus, Date.now(), transcriptPath, result.errorMessage, runId);
 
-    // On failure: release the ticket claim and add a block comment
+    // On failure: release the ticket claim and add a block comment.
+    // Atomic: both ops in one transaction so the ticket can't end up
+    // unclaimed-but-no-block-comment if the process crashes between them.
+    // (Final Review H-01)
     if (result.exitStatus !== 'success') {
       childLogger.warn({ exitStatus: result.exitStatus, errorMessage: result.errorMessage }, 'Agent run failed');
 
-      // Scope claim release to THIS run only — don't clear another agent's
-      // claim if two agents were spawned concurrently for the same ticket.
-      // (Security Review #7 MEDIUM-02)
-      db.prepare(
-        'UPDATE tickets SET claimed_by_run_id = NULL, claimed_at = NULL, updated_at = ? WHERE id = ? AND claimed_by_run_id = ?',
-      ).run(Date.now(), ticketId, runId);
+      db.transaction(() => {
+        db.prepare(
+          'UPDATE tickets SET claimed_by_run_id = NULL, claimed_at = NULL, updated_at = ? WHERE id = ? AND claimed_by_run_id = ?',
+        ).run(Date.now(), ticketId, runId);
 
-      addComment(db, ticketId, {
-        type: 'block',
-        author: `agent:${agentTypeId}:${runId}`,
-        body: `Agent run failed: ${result.errorMessage ?? result.exitStatus}. Releasing claim. This ticket needs human attention.`,
-        meta: {
-          run_id: runId,
-          exit_status: result.exitStatus,
-          exit_code: result.exitCode,
+        addComment(db, ticketId, {
+          type: 'block',
+          author: `agent:${agentTypeId}:${runId}`,
+          body: `Agent run failed: ${result.errorMessage ?? result.exitStatus}. Releasing claim. This ticket needs human attention.`,
+          meta: {
+            run_id: runId,
+            exit_status: result.exitStatus,
+            exit_code: result.exitCode,
           duration_ms: result.durationMs,
         },
       });
+      })(); // end transaction
     } else {
       childLogger.info({ durationMs: result.durationMs }, 'Agent run completed successfully');
     }

@@ -67,7 +67,10 @@ export async function apiRequest<T = unknown>(
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${text.slice(0, 200)}`);
     }
-    return text as unknown as T;
+    // Non-JSON 2xx response — unexpected from the PD API (which always
+    // returns JSON), but handle gracefully instead of silently returning
+    // a string where the caller expects T. (Final Review H-02)
+    throw new Error(`Unexpected non-JSON response (HTTP ${response.status}): ${text.slice(0, 200)}`);
   }
 
   if (!response.ok) {

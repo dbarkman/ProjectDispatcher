@@ -62,11 +62,14 @@ export async function agentTypeRoutes(app: FastifyInstance, db: Database): Promi
       const promptPath = resolvePromptPath(at.system_prompt_path);
       promptText = await readFile(promptPath, 'utf8');
     } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-        // Unexpected error (not "file missing") — log but don't fail the request
+      if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
+        // Prompt file missing — warn so the operator knows. Agents launched
+        // against this type will get a degraded prompt. (Final Review M-01)
+        request.log.warn({ path: at.system_prompt_path }, 'Prompt file missing for agent type');
+      } else {
         request.log.warn({ err, path: at.system_prompt_path }, 'Failed to read prompt file');
       }
-      // ENOENT or path resolution failure → promptText stays null
+      // promptText stays null
     }
 
     return { ...at, prompt_text: promptText };

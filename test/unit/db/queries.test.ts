@@ -188,7 +188,6 @@ describe('tickets queries', () => {
 
   it('moveTicket resets heartbeat when target is an agent column', () => {
     const t = createTicket(db, { projectId, title: 'HB test' });
-    const before = getProject(db, projectId);
     moveTicket(db, t.id, { toColumn: 'coding-agent' });
     const after = getProject(db, projectId);
     // Heartbeat should have been reset to near-immediate
