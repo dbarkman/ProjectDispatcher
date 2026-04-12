@@ -129,6 +129,6 @@ export function wakeProject(db: Database, id: string): boolean {
        SET next_check_at = ?, consecutive_empty_checks = 0, last_wake_at = ?, updated_at = ?
        WHERE project_id = ?`,
     )
-    .run(now + 5000, 0, now, id); // 5 seconds from now — immediate wake
+    .run(now + 5000, now, now, id); // consecutive_empty_checks=0 is a SQL literal, not a param
   return result.changes > 0;
 }
