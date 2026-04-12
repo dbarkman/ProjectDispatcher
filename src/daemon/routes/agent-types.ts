@@ -1,9 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
-import { dirname, join, resolve, sep } from 'node:path';
-import { homedir } from 'node:os';
+import { readFile } from 'node:fs/promises';
 import {
   listAgentTypes,
   getAgentType,
@@ -11,29 +9,10 @@ import {
   updateAgentType,
   deleteAgentType,
 } from '../../db/queries/agent-types.js';
-
-/** Root directory for prompt files. Resolved once at module load. */
-const PROMPTS_DIR = resolve(join(homedir(), 'Development', '.tasks', 'prompts'));
-
-/**
- * Validate that a prompt filename is safe — no traversal, no absolute paths,
- * must stay inside PROMPTS_DIR. Returns the resolved absolute path or throws.
- *
- * Security: This is the Review #1 watchpoint for system_prompt_path traversal.
- * Uses realpath-equivalent resolution + startsWith containment check, not
- * regex alone (regex can miss symlink escapes and edge cases).
- */
-function resolvePromptPath(filename: string): string {
-  // Reject obvious traversal before even resolving
-  if (filename.includes('..') || filename.startsWith('/') || filename.startsWith('\\')) {
-    throw new Error(`Invalid prompt filename: ${filename}`);
-  }
-  const full = resolve(PROMPTS_DIR, filename);
-  if (!full.startsWith(PROMPTS_DIR + sep)) {
-    throw new Error(`Prompt path escapes prompts directory: ${filename}`);
-  }
-  return full;
-}
+import {
+  resolvePromptPath,
+  writePromptFile,
+} from '../../services/prompt-file.js';
 
 // Slug param — same constraint as create-time. (Code Review #4 F-06)
 const slugParam = z.object({
@@ -104,11 +83,9 @@ export async function agentTypeRoutes(app: FastifyInstance, db: Database): Promi
 
     const promptFilename = `${body.id}.md`;
 
-    // Write prompt file if text was provided
+    // Write prompt file if text was provided (atomic via temp+rename)
     if (body.prompt_text) {
-      const promptPath = resolvePromptPath(promptFilename);
-      await mkdir(dirname(promptPath), { recursive: true });
-      await writeFile(promptPath, body.prompt_text, 'utf8');
+      await writePromptFile(body.id, body.prompt_text);
     }
 
     const at = createAgentType(db, {
@@ -131,14 +108,13 @@ export async function agentTypeRoutes(app: FastifyInstance, db: Database): Promi
     const { id } = slugParam.parse(request.params);
     const body = updateAgentTypeBody.parse(request.body);
 
-    // Write prompt file if text was provided
+    // Write prompt file if text was provided (atomic via temp+rename)
     if (body.prompt_text !== undefined) {
       const existing = getAgentType(db, id);
       if (!existing) return reply.status(404).send({ error: 'Agent type not found' });
-
-      const promptPath = resolvePromptPath(existing.system_prompt_path);
-      await mkdir(dirname(promptPath), { recursive: true });
-      await writeFile(promptPath, body.prompt_text, 'utf8');
+      // system_prompt_path is e.g. "coding-agent.md" — extract the ID
+      const promptId = existing.system_prompt_path.replace(/\.md$/, '');
+      await writePromptFile(promptId, body.prompt_text);
     }
 
     const updated = updateAgentType(db, id, {
