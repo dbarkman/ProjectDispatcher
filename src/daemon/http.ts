@@ -1,8 +1,10 @@
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import { z } from 'zod';
 import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
 import type { Config } from '../config.schema.js';
+import { projectRoutes } from './routes/projects.js';
 
 export interface HttpServerDeps {
   config: Config;
@@ -57,6 +59,15 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
 
   // Global error handler — structured JSON errors, no stack traces leaked.
   app.setErrorHandler((error: Error & { statusCode?: number }, request, reply) => {
+    // Zod validation errors → 400 with field-specific details.
+    if (error instanceof z.ZodError) {
+      const issues = error.issues.map((i) => ({
+        path: i.path.join('.'),
+        message: i.message,
+      }));
+      return reply.status(400).send({ error: 'Validation failed', issues });
+    }
+
     const statusCode = error.statusCode ?? 500;
 
     if (statusCode >= 500) {
@@ -69,6 +80,9 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
       error: statusCode >= 500 ? 'Internal server error' : error.message,
     });
   });
+
+  // --- Route registration ---
+  await projectRoutes(app, db);
 
   // Health check — no auth, lightweight, used by monitoring and CLI.
   app.get('/api/health', async () => {
