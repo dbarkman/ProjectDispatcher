@@ -5,6 +5,7 @@ import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
 import type { Config } from '../config.schema.js';
 import { projectRoutes } from './routes/projects.js';
+import { projectTypeRoutes } from './routes/project-types.js';
 
 export interface HttpServerDeps {
   config: Config;
@@ -83,6 +84,7 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
 
   // --- Route registration ---
   await projectRoutes(app, db);
+  await projectTypeRoutes(app, db);
 
   // Health check — no auth, lightweight, used by monitoring and CLI.
   app.get('/api/health', async () => {
