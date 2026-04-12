@@ -1,8 +1,13 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { z } from 'zod';
+import { DEFAULT_TASKS_DIR } from '../db/index.js';
 
-const RUNS_DIR = join(homedir(), 'Development', '.tasks', 'artifacts', 'runs');
+const RUNS_DIR = join(DEFAULT_TASKS_DIR, 'artifacts', 'runs');
+
+// Validate runId as UUID before constructing any file path — prevents
+// path traversal via crafted IDs. (Review #6 L3 / MEDIUM-03)
+const runIdSchema = z.string().uuid();
 
 export interface TranscriptEntry {
   type: 'text' | 'tool_call' | 'tool_result' | 'error' | 'unknown';
@@ -13,6 +18,7 @@ export interface TranscriptEntry {
  * Read the raw transcript for an agent run.
  */
 export async function readTranscript(runId: string): Promise<string> {
+  runIdSchema.parse(runId);
   const path = join(RUNS_DIR, `${runId}.log`);
   return readFile(path, 'utf8');
 }
@@ -21,10 +27,6 @@ export async function readTranscript(runId: string): Promise<string> {
  * Parse a raw transcript into structured entries. The transcript is
  * output from `claude -p --output-format text` (or stream-json), so
  * it's a mix of text output and tool call logs.
- *
- * For text output format, the transcript is just the assistant's text
- * response. For stream-json format, each line is a JSON object with a
- * type field. We handle both gracefully.
  */
 export function parseTranscript(raw: string): TranscriptEntry[] {
   const entries: TranscriptEntry[] = [];
@@ -34,7 +36,6 @@ export function parseTranscript(raw: string): TranscriptEntry[] {
     const trimmed = line.trim();
     if (!trimmed) continue;
 
-    // Try to parse as JSON (stream-json format)
     if (trimmed.startsWith('{')) {
       try {
         const parsed = JSON.parse(trimmed) as Record<string, unknown>;

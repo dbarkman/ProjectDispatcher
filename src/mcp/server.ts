@@ -12,6 +12,7 @@
 //   DISPATCH_AGENT_TYPE  — slug of the agent type (for author strings)
 //   DISPATCH_DB_PATH     — path to the SQLite database file
 
+import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { openDatabase } from '../db/index.js';
@@ -26,10 +27,14 @@ function requireEnv(name: string): string {
   return value;
 }
 
+// Zod-validate UUIDs from env vars — catches logic bugs in the agent
+// runner that could pass malformed IDs. (Review #6 L1)
+const uuidSchema = z.string().uuid();
+
 async function main(): Promise<void> {
-  const runId = requireEnv('DISPATCH_RUN_ID');
-  const ticketId = requireEnv('DISPATCH_TICKET_ID');
-  const projectId = requireEnv('DISPATCH_PROJECT_ID');
+  const runId = uuidSchema.parse(requireEnv('DISPATCH_RUN_ID'));
+  const ticketId = uuidSchema.parse(requireEnv('DISPATCH_TICKET_ID'));
+  const projectId = uuidSchema.parse(requireEnv('DISPATCH_PROJECT_ID'));
   const dbPath = requireEnv('DISPATCH_DB_PATH');
   // DISPATCH_AGENT_TYPE is optional (used for author strings, defaults in tools.ts)
 

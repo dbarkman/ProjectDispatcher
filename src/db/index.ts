@@ -23,7 +23,15 @@ import { homedir } from 'node:os';
  * Default on-disk database path. Resolved via os.homedir() so it works
  * cross-platform — never hardcode /Users/... or /home/...
  */
-export const DEFAULT_DB_PATH = join(homedir(), 'Development', '.tasks', 'tasks.db');
+/**
+ * The canonical .tasks directory. All dispatch data (DB, prompts, logs,
+ * artifacts) lives under this path. Derived from os.homedir() so it's
+ * cross-platform. If config.discovery.root_path is ever changed, this
+ * constant should be updated to match — for V1 it's hardcoded to the
+ * default. (Code Review #6 M5 / L5)
+ */
+export const DEFAULT_TASKS_DIR = join(homedir(), 'Development', '.tasks');
+export const DEFAULT_DB_PATH = join(DEFAULT_TASKS_DIR, 'tasks.db');
 
 /**
  * Open a SQLite database and apply the required pragmas.

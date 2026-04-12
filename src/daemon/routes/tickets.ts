@@ -35,8 +35,10 @@ const moveTicketBody = z.object({
   author: z.string().optional(),
 });
 
+// Valid comment types. 'move' is internal only (created by moveTicket).
+// Constrained to enum per Review #6 MEDIUM-02 / L2.
 const addCommentBody = z.object({
-  type: z.string().min(1),
+  type: z.enum(['comment', 'journal', 'block', 'finding', 'complete', 'move', 'claim', 'chat_summary']),
   author: z.string().min(1),
   body: z.string().optional(),
   meta: z.record(z.string(), z.unknown()).optional(),

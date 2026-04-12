@@ -1,17 +1,24 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { writeFile, mkdir, unlink } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
+import { z } from 'zod';
 import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
 import type { Config } from '../config.schema.js';
-import { DEFAULT_DB_PATH } from '../db/index.js';
+import { DEFAULT_DB_PATH, DEFAULT_TASKS_DIR } from '../db/index.js';
 import { addComment } from '../db/queries/tickets.js';
 import { buildPrompt } from '../services/prompt-builder.js';
 
-const ARTIFACTS_DIR = join(homedir(), 'Development', '.tasks', 'artifacts', 'runs');
+// Portable __dirname for ESM (Review #6 L4 — import.meta.dirname requires Node 21.2)
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const ARTIFACTS_DIR = join(DEFAULT_TASKS_DIR, 'artifacts', 'runs');
+
+const allowedToolsSchema = z.array(z.string().min(1));
 
 export interface AgentRunResult {
   runId: string;
@@ -61,18 +68,15 @@ function untrackRun(projectId: string, runId: string): void {
 /**
  * Spawn an agent subprocess to work on a ticket.
  *
- * 1. Load the agent type, validate concurrency limits.
- * 2. Create an agent_runs DB row (status = 'running').
- * 3. Build the system prompt.
- * 4. Write a temporary MCP config file.
- * 5. Spawn `claude -p` with the prompt, MCP config, CWD, model, tools,
- *    and permission mode.
- * 6. Pipe stdout/stderr to a transcript file.
- * 7. Enforce the timeout.
- * 8. On exit: update the agent_runs row, release the ticket claim if
- *    crashed/timed out, add a block comment on failure.
- *
- * Returns a promise that resolves when the subprocess exits.
+ * Lifecycle:
+ *   1. Load agent type, validate concurrency limits.
+ *   2. Create agent_runs DB row (exit_status = 'running').
+ *   3. Build the system prompt via prompt-builder.
+ *   4. Write a temporary MCP config file.
+ *   5. Spawn `claude -p` with scrubbed env (whitelist-only).
+ *   6. Pipe stdout/stderr to a transcript file.
+ *   7. Enforce timeout: SIGTERM → 10s grace → SIGKILL.
+ *   8. On exit: update agent_runs, release claim on failure, add block comment.
  */
 export async function runAgent(
   input: AgentRunInput,
@@ -119,6 +123,9 @@ export async function runAgent(
   const childLogger = logger.child({ runId, agentType: agentTypeId, project: projectId });
   childLogger.info({ ticketId }, 'Agent run starting');
 
+  // MCP config temp file path — cleaned up in finally block
+  let mcpConfigPath: string | null = null;
+
   try {
     // Build the system prompt
     const prompt = await buildPrompt({
@@ -130,11 +137,10 @@ export async function runAgent(
     });
 
     // Write MCP config to a temp file
-    const mcpConfigPath = join(ARTIFACTS_DIR, `${runId}-mcp.json`);
+    mcpConfigPath = join(ARTIFACTS_DIR, `${runId}-mcp.json`);
     await mkdir(ARTIFACTS_DIR, { recursive: true });
 
-    // Resolve the MCP server script path relative to this file's compiled location
-    const mcpServerPath = resolve(join(import.meta.dirname ?? '.', '..', 'mcp', 'server.js'));
+    const mcpServerPath = resolve(join(__dirname, '..', 'mcp', 'server.js'));
 
     const mcpConfig = {
       mcpServers: {
@@ -157,8 +163,8 @@ export async function runAgent(
     const transcriptPath = join(ARTIFACTS_DIR, `${runId}.log`);
     const transcriptStream = createWriteStream(transcriptPath, { flags: 'a' });
 
-    // Parse allowed_tools
-    const tools = JSON.parse(agentType.allowed_tools) as string[];
+    // Parse + validate allowed_tools (Review #6 M3 — Zod at every boundary)
+    const tools = allowedToolsSchema.parse(JSON.parse(agentType.allowed_tools));
 
     // Build the claude command
     const claudeArgs = [
@@ -172,31 +178,49 @@ export async function runAgent(
 
     childLogger.info({ cwd: project.path }, 'Spawning claude subprocess');
 
+    // Subprocess environment: WHITELIST ONLY. Do NOT spread process.env.
+    // The claude CLI needs ANTHROPIC_API_KEY to authenticate. We pass only
+    // what's required and nothing else — no leaked AWS keys, DB URLs, or
+    // CI tokens from the developer's shell. (Review #6 H2 / HIGH-01)
+    const subprocessEnv: Record<string, string> = {
+      HOME: homedir(),
+      PATH: process.env['PATH'] ?? '',
+      NODE_ENV: process.env['NODE_ENV'] ?? 'production',
+    };
+    // Claude authentication — pass the API key if present
+    if (process.env['ANTHROPIC_API_KEY']) {
+      subprocessEnv['ANTHROPIC_API_KEY'] = process.env['ANTHROPIC_API_KEY'];
+    }
+    if (process.env['ANTHROPIC_BASE_URL']) {
+      subprocessEnv['ANTHROPIC_BASE_URL'] = process.env['ANTHROPIC_BASE_URL'];
+    }
+
     // Spawn the subprocess
     const result = await new Promise<AgentRunResult>((resolvePromise) => {
       const child: ChildProcess = spawn(config.claude_cli.binary_path, claudeArgs, {
         cwd: project.path,
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          // Don't inherit potentially dangerous env — only pass what's needed
-          HOME: homedir(),
-          PATH: process.env['PATH'] ?? '',
-          NODE_ENV: process.env['NODE_ENV'] ?? 'production',
-        },
+        env: subprocessEnv,
       });
 
       child.stdout?.pipe(transcriptStream);
       child.stderr?.pipe(transcriptStream);
 
-      // Timeout enforcement
+      let exited = false;
+
+      // Timeout enforcement — SIGTERM then SIGKILL grace period.
+      // Review #6 H1 / HIGH-02: child.killed is set when kill() is CALLED,
+      // not when the process EXITS. We track exit state ourselves via a flag
+      // and clear the kill timer on the 'exit' event.
       const timeoutMs = agentType.timeout_minutes * 60 * 1000;
+      let killTimer: ReturnType<typeof setTimeout> | null = null;
+
       const timer = setTimeout(() => {
         childLogger.warn({ timeoutMs }, 'Agent timed out — sending SIGTERM');
         child.kill('SIGTERM');
-        // Grace period: if still alive after 10 seconds, SIGKILL
-        setTimeout(() => {
-          if (!child.killed) {
+        // Grace period: SIGKILL after 10 seconds if not exited
+        killTimer = setTimeout(() => {
+          if (!exited) {
             childLogger.warn('Agent did not exit after SIGTERM — sending SIGKILL');
             child.kill('SIGKILL');
           }
@@ -204,7 +228,9 @@ export async function runAgent(
       }, timeoutMs);
 
       child.on('exit', (code, signal) => {
+        exited = true;
         clearTimeout(timer);
+        if (killTimer) clearTimeout(killTimer);
         transcriptStream.end();
 
         const durationMs = Date.now() - startedAt;
@@ -225,7 +251,9 @@ export async function runAgent(
       });
 
       child.on('error', (err) => {
+        exited = true;
         clearTimeout(timer);
+        if (killTimer) clearTimeout(killTimer);
         transcriptStream.end();
         const durationMs = Date.now() - startedAt;
         resolvePromise({
@@ -268,15 +296,16 @@ export async function runAgent(
       childLogger.info({ durationMs: result.durationMs }, 'Agent run completed successfully');
     }
 
-    // Clean up temp MCP config
-    try {
-      await unlink(mcpConfigPath);
-    } catch {
-      // Best-effort cleanup
-    }
-
     return result;
   } finally {
     untrackRun(projectId, runId);
+    // Clean up temp MCP config (Review #6 LOW-03 — moved to finally)
+    if (mcpConfigPath) {
+      try {
+        await unlink(mcpConfigPath);
+      } catch {
+        // Best-effort cleanup
+      }
+    }
   }
 }

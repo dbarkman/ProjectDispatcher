@@ -1,10 +1,10 @@
 import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
-import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_TASKS_DIR } from '../db/index.js';
 
-/** Root directory for prompt files. Resolved once at import time. */
-const PROMPTS_DIR = resolve(join(homedir(), 'Development', '.tasks', 'prompts'));
+/** Root directory for prompt files. Derived from DEFAULT_TASKS_DIR (Review #6 L5). */
+const PROMPTS_DIR = resolve(join(DEFAULT_TASKS_DIR, 'prompts'));
 
 /**
  * Validate and resolve a prompt filename to an absolute path inside
