@@ -1,3 +1,4 @@
+import { basename } from 'node:path';
 import type { Command } from 'commander';
 import Table from 'cli-table3';
 import chalk from 'chalk';
@@ -30,7 +31,10 @@ export function registerProjectCommands(program: Command): void {
     .description('List all registered projects')
     .option('--status <status>', 'Filter by status (active, dormant, missing, archived)')
     .action(async (opts: { status?: string }) => {
-      const query = opts.status ? `?status=${opts.status}` : '';
+      // Use URLSearchParams for safe encoding (Review #8 MEDIUM / L1)
+      const params = new URLSearchParams();
+      if (opts.status) params.set('status', opts.status);
+      const query = params.size ? `?${params.toString()}` : '';
       const data = await api.get<Project[]>(`/api/projects${query}`);
 
       if (data.length === 0) {
@@ -71,7 +75,7 @@ export function registerProjectCommands(program: Command): void {
     .requiredOption('--type <type>', 'Project type ID (e.g., software-dev)')
     .option('--name <name>', 'Display name (defaults to folder basename)')
     .action(async (path: string, opts: { type: string; name?: string }) => {
-      const name = opts.name ?? path.split('/').pop() ?? path;
+      const name = opts.name ?? basename(path);
       const p = await api.post<Project>('/api/projects', {
         name,
         path,
@@ -123,14 +127,21 @@ export function registerProjectCommands(program: Command): void {
         await api.post(`/api/projects/${projectId}/wake`);
         console.log(chalk.green(`Heartbeat reset for project ${projectId}`));
       } else {
-        // Wake all active projects
+        // Wake all active projects — collect failures instead of aborting (Review #8 L2)
         const projects = await api.get<Project[]>('/api/projects');
-        for (const p of projects) {
-          if (p.status === 'active') {
+        const active = projects.filter((p) => p.status === 'active');
+        const failures: string[] = [];
+        for (const p of active) {
+          try {
             await api.post(`/api/projects/${p.id}/wake`);
+          } catch (err) {
+            failures.push(`${p.name}: ${err instanceof Error ? err.message : String(err)}`);
           }
         }
-        console.log(chalk.green(`Heartbeat reset for ${projects.filter((p) => p.status === 'active').length} active projects`));
+        if (failures.length > 0) {
+          console.error(chalk.red(`Failed to wake:\n${failures.map((f) => `  ${f}`).join('\n')}`));
+        }
+        console.log(chalk.green(`Heartbeat reset for ${active.length - failures.length} of ${active.length} active projects`));
       }
     });
 }
