@@ -1,4 +1,5 @@
 import { watch, type FSWatcher } from 'chokidar';
+import { basename } from 'node:path';
 import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
 import type { Config } from '../config.schema.js';
@@ -20,8 +21,7 @@ export function startWatcher(db: Database, config: Config, logger: Logger): FSWa
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   const runDiscovery = (): void => {
-    try {
-      const result = discoverProjects(db, config);
+    discoverProjects(db, config).then((result) => {
       if (result.discovered.length > 0) {
         logger.info({ paths: result.discovered }, 'New folders discovered');
       }
@@ -31,9 +31,9 @@ export function startWatcher(db: Database, config: Config, logger: Logger): FSWa
       if (result.restored.length > 0) {
         logger.info({ paths: result.restored }, 'Folders restored from missing');
       }
-    } catch (err) {
+    }).catch((err) => {
       logger.error({ err }, 'Discovery failed during watcher event');
-    }
+    });
   };
 
   const debouncedDiscovery = (): void => {
@@ -44,11 +44,12 @@ export function startWatcher(db: Database, config: Config, logger: Logger): FSWa
   const watcher = watch(rootPath, {
     depth: 0, // Only immediate children of the root
     ignoreInitial: true, // Don't fire for existing folders (discovery handles that)
-    ignored: (path: string, stats) => {
+    followSymlinks: false, // Don't follow symlinks — prevents unexpected traversal (Review #5 L-03)
+    ignored: (filePath: string, stats) => {
       // Ignore files (we only care about directories)
       if (stats?.isFile()) return true;
-      // Ignore dotfiles/dotdirs
-      const name = path.split('/').pop() ?? '';
+      // Ignore dotfiles/dotdirs — use basename for cross-platform (Review #5 F-02 / L-01)
+      const name = basename(filePath);
       if (name.startsWith('.')) return true;
       // Ignore configured ignore list
       if (ignoreSet.has(name)) return true;

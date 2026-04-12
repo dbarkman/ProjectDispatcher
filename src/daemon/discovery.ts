@@ -1,4 +1,4 @@
-import { readdirSync, statSync } from 'node:fs';
+import { readdir, stat } from 'node:fs/promises';
 import { join, basename } from 'node:path';
 import type { Database } from 'better-sqlite3';
 import type { Config } from '../config.schema.js';
@@ -17,37 +17,39 @@ export interface DiscoveryResult {
 /**
  * Scan the discovery root for project folders and reconcile with the DB.
  *
- * This is a pure read + diff operation against the filesystem and the DB.
- * It does NOT create DB rows for undiscovered folders — the user must
+ * Async: uses fs/promises throughout. Called both at daemon startup
+ * (where await is fine — runs before app.listen) and from the watcher
+ * callback (where sync I/O would block the event loop). Previous
+ * version used readdirSync/statSync which violated the coding principle
+ * outside startup. (Review #5 F-01 / M-02)
+ *
+ * Does NOT create DB rows for undiscovered folders — the user must
  * explicitly register a project (picking a type) via the API or CLI.
- * This avoids the need for a nullable project_type_id FK or an
- * 'unregistered' status in the schema. Discovery re-runs on every
- * startup, so the "discovered" list is always fresh.
- *
- * It DOES mark registered projects as 'missing' if their folder vanishes,
- * and restores them to 'active' if the folder reappears.
- *
- * Sync fs is deliberate: this runs at daemon startup (same carve-out as
- * migrations and seed). The watcher (MVP-13) handles live changes.
+ * Discovery re-runs on every startup, so the "discovered" list is
+ * always fresh.
  */
-export function discoverProjects(db: Database, config: Config): DiscoveryResult {
+export async function discoverProjects(db: Database, config: Config): Promise<DiscoveryResult> {
   const rootPath = config.discovery.root_path;
   const ignoreSet = new Set(config.discovery.ignore);
 
   // 1. List immediate subdirectories under the root
   let diskFolders: string[];
   try {
-    diskFolders = readdirSync(rootPath)
-      .filter((name) => {
-        if (name.startsWith('.')) return false;
-        if (ignoreSet.has(name)) return false;
-        try {
-          return statSync(join(rootPath, name)).isDirectory();
-        } catch {
-          return false;
-        }
-      })
-      .map((name) => join(rootPath, name));
+    const entries = await readdir(rootPath);
+    const checks = await Promise.all(
+      entries
+        .filter((name) => !name.startsWith('.') && !ignoreSet.has(name))
+        .map(async (name) => {
+          const fullPath = join(rootPath, name);
+          try {
+            const s = await stat(fullPath);
+            return s.isDirectory() ? fullPath : null;
+          } catch {
+            return null;
+          }
+        }),
+    );
+    diskFolders = checks.filter((p): p is string => p !== null);
   } catch {
     // Root doesn't exist yet (first run before any projects) — that's fine
     diskFolders = [];
@@ -55,7 +57,9 @@ export function discoverProjects(db: Database, config: Config): DiscoveryResult 
 
   const diskPathSet = new Set(diskFolders);
 
-  // 2. Get all registered project paths from the DB
+  // 2. Get all registered project paths from the DB (sync — DB queries are
+  //    always sync with better-sqlite3, and that's fine; it's the filesystem
+  //    scanning that needed to be async).
   const dbProjects = db
     .prepare("SELECT id, path, status FROM projects WHERE status != 'archived'")
     .all() as Array<{ id: string; path: string; status: string }>;
@@ -73,7 +77,6 @@ export function discoverProjects(db: Database, config: Config): DiscoveryResult 
     const existing = dbPathMap.get(folderPath);
     if (existing) {
       registered.push(folderPath);
-      // If it was marked 'missing' but folder is back, restore to 'active'
       if (existing.status === 'missing') {
         db.prepare("UPDATE projects SET status = 'active', updated_at = ? WHERE id = ?").run(
           now,
@@ -102,7 +105,6 @@ export function discoverProjects(db: Database, config: Config): DiscoveryResult 
 
 /**
  * Get the display name for a discovered (not yet registered) folder.
- * Just the basename of the path.
  */
 export function folderDisplayName(folderPath: string): string {
   return basename(folderPath);

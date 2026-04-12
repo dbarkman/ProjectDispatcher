@@ -46,7 +46,7 @@ async function main(): Promise<void> {
   }
 
   // 4. Discover projects on disk
-  const discovery = discoverProjects(db, config);
+  const discovery = await discoverProjects(db, config);
   logger.info(
     {
       registered: discovery.registered.length,

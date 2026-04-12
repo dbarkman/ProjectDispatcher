@@ -83,11 +83,9 @@ export async function agentTypeRoutes(app: FastifyInstance, db: Database): Promi
 
     const promptFilename = `${body.id}.md`;
 
-    // Write prompt file if text was provided (atomic via temp+rename)
-    if (body.prompt_text) {
-      await writePromptFile(body.id, body.prompt_text);
-    }
-
+    // DB first, then file — a failed file write after a successful DB insert
+    // is easier to recover from (retry on next write) than an orphaned file
+    // with no DB row. (Review #5 F-05)
     const at = createAgentType(db, {
       id: body.id,
       name: body.name,
@@ -100,6 +98,13 @@ export async function agentTypeRoutes(app: FastifyInstance, db: Database): Promi
       maxRetries: body.max_retries,
     });
 
+    // Write prompt file after DB success (atomic via temp+rename).
+    // Uses !== undefined for consistency with the PATCH handler — empty
+    // string is a valid "clear the prompt" operation. (Review #5 F-04)
+    if (body.prompt_text !== undefined) {
+      await writePromptFile(body.id, body.prompt_text);
+    }
+
     return reply.status(201).send(at);
   });
 
@@ -108,15 +113,7 @@ export async function agentTypeRoutes(app: FastifyInstance, db: Database): Promi
     const { id } = slugParam.parse(request.params);
     const body = updateAgentTypeBody.parse(request.body);
 
-    // Write prompt file if text was provided (atomic via temp+rename)
-    if (body.prompt_text !== undefined) {
-      const existing = getAgentType(db, id);
-      if (!existing) return reply.status(404).send({ error: 'Agent type not found' });
-      // system_prompt_path is e.g. "coding-agent.md" — extract the ID
-      const promptId = existing.system_prompt_path.replace(/\.md$/, '');
-      await writePromptFile(promptId, body.prompt_text);
-    }
-
+    // DB first, then file — same ordering rationale as POST. (Review #5 F-05)
     const updated = updateAgentType(db, id, {
       name: body.name,
       description: body.description,
@@ -128,6 +125,13 @@ export async function agentTypeRoutes(app: FastifyInstance, db: Database): Promi
     });
 
     if (!updated) return reply.status(404).send({ error: 'Agent type not found' });
+
+    // Write prompt file after DB success (atomic via temp+rename)
+    if (body.prompt_text !== undefined) {
+      const promptId = updated.system_prompt_path.replace(/\.md$/, '');
+      await writePromptFile(promptId, body.prompt_text);
+    }
+
     return updated;
   });
 

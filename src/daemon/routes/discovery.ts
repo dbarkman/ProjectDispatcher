@@ -14,7 +14,7 @@ export async function discoveryRoutes(
 ): Promise<void> {
   // GET /api/discovery — returns discovered (unregistered) folders
   app.get('/api/discovery', async () => {
-    const result = discoverProjects(db, config);
+    const result = await discoverProjects(db, config);
     return {
       discovered: result.discovered.map((path) => ({
         path,

@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { writeFile } from 'node:fs/promises';
-import { loadConfig, reloadConfig, DEFAULT_CONFIG_PATH } from '../../config.js';
+import { readFile, writeFile } from 'node:fs/promises';
+import { reloadConfig, DEFAULT_CONFIG_PATH } from '../../config.js';
 import { configSchema, type Config } from '../../config.schema.js';
 
 /**
@@ -30,11 +30,13 @@ export async function configRoutes(
     // instead of a 500 TypeError. (Code Review #4 F-02, Security Review #4 MEDIUM)
     const patch = z.record(z.string(), z.unknown()).parse(request.body);
 
-    // Read current file config as the merge base
+    // Read current file config as the merge base. Uses async readFile
+    // instead of the sync loadConfig — this is a request handler, not
+    // startup, so sync I/O is not acceptable. (Security Review #5 M-01)
     let current: Record<string, unknown>;
     try {
-      const loaded = loadConfig(configPath);
-      current = loaded as unknown as Record<string, unknown>;
+      const text = await readFile(configPath, 'utf8');
+      current = JSON.parse(text) as Record<string, unknown>;
     } catch {
       current = {};
     }

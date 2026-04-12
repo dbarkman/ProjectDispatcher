@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir, rename } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, rename, unlink } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -53,12 +53,11 @@ export async function writePromptFile(agentTypeId: string, content: string): Pro
     await writeFile(tmpPath, content, 'utf8');
     await rename(tmpPath, path);
   } catch (err) {
-    // Clean up the temp file if rename failed
+    // Clean up the temp file if rename failed (best-effort)
     try {
-      const { unlink } = await import('node:fs/promises');
       await unlink(tmpPath);
     } catch {
-      // Best-effort cleanup
+      // Orphaned .tmp in PROMPTS_DIR is harmless
     }
     throw err;
   }
