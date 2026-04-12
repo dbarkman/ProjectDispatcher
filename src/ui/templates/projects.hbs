@@ -1,0 +1,32 @@
+{{#if projects.length}}
+<div class="overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b border-navy-700 text-left text-gray-400">
+        <th class="pb-3 pr-4 font-medium">Name</th>
+        <th class="pb-3 pr-4 font-medium">Type</th>
+        <th class="pb-3 pr-4 font-medium w-24">Status</th>
+        <th class="pb-3 font-medium">Path</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each projects}}
+      <tr class="border-b border-navy-800 hover:bg-navy-800/50 cursor-pointer"
+          onclick="window.location='/ui/projects/{{this.id}}'">
+        <td class="py-3 pr-4 text-gray-200 font-medium">{{this.name}}</td>
+        <td class="py-3 pr-4 text-gray-400">{{this.project_type_id}}</td>
+        <td class="py-3 pr-4">
+          <span class="badge badge-{{this.status}}">{{this.status}}</span>
+        </td>
+        <td class="py-3 text-gray-500 text-xs font-mono">{{this.path}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<div class="text-center py-20 text-gray-500">
+  <p>No projects registered yet.</p>
+  <p class="text-sm mt-2">Use <code class="text-accent">dispatch projects register</code> to add one.</p>
+</div>
+{{/if}}

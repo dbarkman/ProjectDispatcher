@@ -1,0 +1,44 @@
+{{#if isEmpty}}
+<div class="flex flex-col items-center justify-center py-20 text-center">
+  <div class="text-5xl mb-4">&#10003;</div>
+  <h3 class="text-xl font-semibold text-gray-300 mb-2">All clear!</h3>
+  <p class="text-gray-500 max-w-md">No tickets waiting for your attention. Agents are either working or there's nothing in the queue.</p>
+</div>
+{{else}}
+<div class="mb-4 text-sm text-gray-400">
+  {{tickets.length}} ticket{{#unless (eq tickets.length 1)}}s{{/unless}} waiting
+</div>
+
+<div class="overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b border-navy-700 text-left text-gray-400">
+        <th class="pb-3 pr-4 font-medium">Project</th>
+        <th class="pb-3 pr-4 font-medium">Title</th>
+        <th class="pb-3 pr-4 font-medium w-20">Priority</th>
+        <th class="pb-3 font-medium w-20">Age</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each tickets}}
+      <tr class="border-b border-navy-800 hover:bg-navy-800/50 cursor-pointer"
+          onclick="window.location='/ui/tickets/{{this.id}}'">
+        <td class="py-3 pr-4">
+          <span class="text-accent text-xs font-mono">[{{this.projectName}}]</span>
+        </td>
+        <td class="py-3 pr-4 text-gray-200">
+          {{this.title}}
+        </td>
+        <td class="py-3 pr-4">
+          <span class="priority-dot priority-{{this.priority}}"></span>
+          <span class="text-gray-400 text-xs ml-1">{{this.priority}}</span>
+        </td>
+        <td class="py-3 text-gray-500 text-xs">
+          {{relativeTime this.updated_at}}
+        </td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+</div>
+{{/if}}

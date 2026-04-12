@@ -10,6 +10,8 @@ import { cp } from 'node:fs/promises';
 const pairs = [
   ['src/db/migrations', 'dist/db/migrations'],
   ['src/prompts/defaults', 'dist/prompts/defaults'],
+  ['src/ui/templates', 'dist/ui/templates'],
+  ['src/ui/static', 'dist/ui/static'],
 ];
 
 for (const [from, to] of pairs) {

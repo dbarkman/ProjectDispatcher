@@ -1,0 +1,27 @@
+<div class="overflow-x-auto">
+  <table class="w-full text-sm">
+    <thead>
+      <tr class="border-b border-navy-700 text-left text-gray-400">
+        <th class="pb-3 pr-4 font-medium">Name</th>
+        <th class="pb-3 pr-4 font-medium">Model</th>
+        <th class="pb-3 pr-4 font-medium">Mode</th>
+        <th class="pb-3 pr-4 font-medium">Timeout</th>
+        <th class="pb-3 font-medium w-16">Built-in</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each types}}
+      <tr class="border-b border-navy-800 hover:bg-navy-800/50 cursor-pointer"
+          onclick="window.location='/ui/agent-types/{{this.id}}'">
+        <td class="py-3 pr-4 text-gray-200 font-medium">{{this.name}}</td>
+        <td class="py-3 pr-4 text-gray-400 text-xs font-mono">{{this.model}}</td>
+        <td class="py-3 pr-4 text-gray-400 text-xs">{{this.permission_mode}}</td>
+        <td class="py-3 pr-4 text-gray-400">{{this.timeout_minutes}}m</td>
+        <td class="py-3 text-center">
+          {{#if this.is_builtin}}<span class="text-accent text-xs">yes</span>{{/if}}
+        </td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+</div>

@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{#if title}}{{title}} — {{/if}}Project Dispatcher</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            // Linode-inspired dark navy palette
+            navy: {
+              50: '#e8eaf0',
+              100: '#c5c9d6',
+              200: '#9ea5b8',
+              300: '#77819a',
+              400: '#596683',
+              500: '#3b4b6c',
+              600: '#354464',
+              700: '#2d3b59',
+              800: '#26324f',
+              900: '#1a2138',
+              950: '#111827',
+            },
+            accent: {
+              DEFAULT: '#3b82f6',
+              hover: '#2563eb',
+            },
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="dark h-full bg-navy-950 text-gray-200">
+  <div class="flex h-full">
+    <!-- Sidebar -->
+    <aside class="w-56 bg-navy-900 border-r border-navy-700 flex flex-col shrink-0">
+      <!-- Logo -->
+      <div class="px-4 py-4 border-b border-navy-700">
+        <h1 class="text-lg font-bold text-white tracking-tight">Dispatch</h1>
+        <p class="text-xs text-gray-400">Project Dispatcher</p>
+      </div>
+
+      <!-- Navigation -->
+      <nav class="flex-1 py-3 overflow-y-auto">
+        <ul class="space-y-0.5 px-2">
+          <li>
+            <a href="/"
+               class="nav-link {{#if (eq activePage 'inbox')}}nav-link-active{{/if}}">
+              <span class="nav-icon">&#9993;</span>
+              Inbox
+              {{#if inboxCount}}<span class="ml-auto bg-accent text-white text-xs px-1.5 py-0.5 rounded-full">{{inboxCount}}</span>{{/if}}
+            </a>
+          </li>
+          <li>
+            <a href="/ui/projects"
+               class="nav-link {{#if (eq activePage 'projects')}}nav-link-active{{/if}}">
+              <span class="nav-icon">&#128193;</span>
+              Projects
+            </a>
+          </li>
+          <li>
+            <a href="/ui/agent-types"
+               class="nav-link {{#if (eq activePage 'agent-types')}}nav-link-active{{/if}}">
+              <span class="nav-icon">&#129302;</span>
+              Agent Types
+            </a>
+          </li>
+          <li>
+            <a href="/ui/settings"
+               class="nav-link {{#if (eq activePage 'settings')}}nav-link-active{{/if}}">
+              <span class="nav-icon">&#9881;</span>
+              Settings
+            </a>
+          </li>
+        </ul>
+      </nav>
+
+      <!-- Version -->
+      <div class="px-4 py-3 border-t border-navy-700 text-xs text-gray-500">
+        v0.0.1
+      </div>
+    </aside>
+
+    <!-- Main content -->
+    <main class="flex-1 overflow-y-auto">
+      <!-- Top bar -->
+      <header class="sticky top-0 z-10 bg-navy-900 border-b border-navy-700 px-6 py-3 flex items-center justify-between">
+        <div>
+          {{#if breadcrumbs}}
+          <nav class="text-sm text-gray-400">
+            {{#each breadcrumbs}}
+            {{#if @last}}
+              <span class="text-gray-200">{{this.label}}</span>
+            {{else}}
+              <a href="{{this.href}}" class="hover:text-gray-200">{{this.label}}</a>
+              <span class="mx-1">/</span>
+            {{/if}}
+            {{/each}}
+          </nav>
+          {{/if}}
+          {{#if pageTitle}}
+          <h2 class="text-xl font-semibold text-white mt-0.5">{{pageTitle}}</h2>
+          {{/if}}
+        </div>
+        {{#if actions}}
+        <div class="flex gap-2">
+          {{{actions}}}
+        </div>
+        {{/if}}
+      </header>
+
+      <!-- Page content -->
+      <div class="p-6">
+        {{{body}}}
+      </div>
+    </main>
+  </div>
+</body>
+</html>

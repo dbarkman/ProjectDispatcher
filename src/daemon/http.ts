@@ -10,6 +10,7 @@ import { agentTypeRoutes } from './routes/agent-types.js';
 import { ticketRoutes } from './routes/tickets.js';
 import { configRoutes } from './routes/config.js';
 import { discoveryRoutes } from './routes/discovery.js';
+import { setupUi } from '../ui/routes/setup.js';
 
 export interface HttpServerDeps {
   config: Config;
@@ -97,6 +98,9 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
   await ticketRoutes(app, db);
   await configRoutes(app, () => config, (c: Config) => { config = c; });
   await discoveryRoutes(app, db, config);
+
+  // Web UI (htmx + Handlebars) — serves HTML pages
+  await setupUi(app, db, config);
 
   // Health check — no auth, lightweight, used by monitoring and CLI.
   app.get('/api/health', async () => {

@@ -1,0 +1,88 @@
+<form hx-patch="/api/config" hx-swap="none"
+      hx-on::after-request="if(event.detail.successful) { alert('Settings saved!'); location.reload(); }">
+
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- Heartbeat -->
+    <div class="card">
+      <h3 class="text-sm font-semibold text-gray-400 mb-4">Heartbeat</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Base Interval (seconds)</label>
+          <input name="heartbeat.base_interval_seconds" type="number" value="{{config.heartbeat.base_interval_seconds}}"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Max Interval (seconds)</label>
+          <input name="heartbeat.max_interval_seconds" type="number" value="{{config.heartbeat.max_interval_seconds}}"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Backoff Multiplier</label>
+          <input name="heartbeat.backoff_multiplier" type="number" step="0.1" value="{{config.heartbeat.backoff_multiplier}}"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+        </div>
+      </div>
+    </div>
+
+    <!-- Agents -->
+    <div class="card">
+      <h3 class="text-sm font-semibold text-gray-400 mb-4">Agents</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Max Concurrent Per Project</label>
+          <input name="agents.max_concurrent_per_project" type="number" value="{{config.agents.max_concurrent_per_project}}"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Max Concurrent Global</label>
+          <input name="agents.max_concurrent_global" type="number" value="{{config.agents.max_concurrent_global}}"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Default Timeout (minutes)</label>
+          <input name="agents.default_timeout_minutes" type="number" value="{{config.agents.default_timeout_minutes}}"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+        </div>
+      </div>
+    </div>
+
+    <!-- UI -->
+    <div class="card">
+      <h3 class="text-sm font-semibold text-gray-400 mb-4">UI</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Port</label>
+          <input name="ui.port" type="number" value="{{config.ui.port}}"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Theme</label>
+          <select name="ui.theme"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+            <option value="dark" {{#if (eq config.ui.theme "dark")}}selected{{/if}}>Dark</option>
+            <option value="light" {{#if (eq config.ui.theme "light")}}selected{{/if}}>Light</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Discovery -->
+    <div class="card">
+      <h3 class="text-sm font-semibold text-gray-400 mb-4">Discovery</h3>
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Root Path</label>
+          <input name="discovery.root_path" value="{{config.discovery.root_path}}"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 font-mono text-xs focus:border-accent focus:outline-none">
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-6">
+    <button type="submit"
+      class="px-6 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">
+      Save Settings
+    </button>
+  </div>
+</form>
