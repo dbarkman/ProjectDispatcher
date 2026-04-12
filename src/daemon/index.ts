@@ -20,6 +20,8 @@ import { openDatabase } from '../db/index.js';
 import { runMigrations } from '../db/migrate.js';
 import { seedBuiltins } from '../db/seed.js';
 import { createHttpServer, BIND_HOST } from './http.js';
+import { discoverProjects } from './discovery.js';
+import { startWatcher } from './watcher.js';
 
 const TASKS_DIR = join(homedir(), 'Development', '.tasks');
 
@@ -43,17 +45,39 @@ async function main(): Promise<void> {
     logger.info(seed, 'Seed data inserted');
   }
 
-  // 4. HTTP server
+  // 4. Discover projects on disk
+  const discovery = discoverProjects(db, config);
+  logger.info(
+    {
+      registered: discovery.registered.length,
+      discovered: discovery.discovered.length,
+      missing: discovery.missing.length,
+      restored: discovery.restored.length,
+    },
+    'Project discovery complete',
+  );
+
+  // 5. HTTP server
   const app = await createHttpServer({ config, db, logger });
 
-  // 5. Listen
+  // 6. Listen
   const port = config.ui.port;
   await app.listen({ host: BIND_HOST, port });
   logger.info({ host: BIND_HOST, port }, 'Daemon listening');
 
+  // 7. Start filesystem watcher for live project discovery
+  const watcher = startWatcher(db, config, logger);
+  logger.info('Filesystem watcher started');
+
   // Graceful shutdown
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'Shutdown signal received');
+    try {
+      await watcher.close();
+      logger.info('Filesystem watcher closed');
+    } catch (err) {
+      logger.error({ err }, 'Error closing watcher');
+    }
     try {
       await app.close();
       logger.info('HTTP server closed');
