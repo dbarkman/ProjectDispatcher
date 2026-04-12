@@ -50,6 +50,11 @@ export function openDatabase(dbPath: string = DEFAULT_DB_PATH): Database.Databas
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   db.pragma('auto_vacuum = INCREMENTAL');
+  // Allow up to 5 seconds of retry on SQLITE_BUSY when another process
+  // (e.g. the MCP server subprocess) holds a write lock. WAL mode makes
+  // contention rare, but the busy timeout prevents hard failures when it
+  // does happen.
+  db.pragma('busy_timeout = 5000');
 
   const fkEnabled = db.pragma('foreign_keys', { simple: true });
   if (fkEnabled !== 1) {
