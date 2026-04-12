@@ -22,6 +22,8 @@ import { seedBuiltins } from '../db/seed.js';
 import { createHttpServer, BIND_HOST } from './http.js';
 import { discoverProjects } from './discovery.js';
 import { startWatcher } from './watcher.js';
+import { recoverFromCrash } from './recovery.js';
+import { Scheduler } from './scheduler.js';
 
 const TASKS_DIR = join(homedir(), 'Development', '.tasks');
 
@@ -57,7 +59,13 @@ async function main(): Promise<void> {
     'Project discovery complete',
   );
 
-  // 5. HTTP server
+  // 5. Crash recovery — clean up stale state BEFORE the scheduler starts
+  const recovery = recoverFromCrash(db, logger);
+  if (recovery.orphanedRuns > 0) {
+    logger.warn(recovery, 'Crash recovery cleaned up stale state');
+  }
+
+  // 6. HTTP server
   const app = await createHttpServer({ config, db, logger });
 
   // 6. Listen
@@ -65,13 +73,23 @@ async function main(): Promise<void> {
   await app.listen({ host: BIND_HOST, port });
   logger.info({ host: BIND_HOST, port }, 'Daemon listening');
 
-  // 7. Start filesystem watcher for live project discovery
+  // 8. Start filesystem watcher for live project discovery
   const watcher = startWatcher(db, config, logger);
   logger.info('Filesystem watcher started');
+
+  // 9. Start the heartbeat scheduler
+  const scheduler = new Scheduler(db, config, logger);
+  scheduler.start();
 
   // Graceful shutdown
   const shutdown = async (signal: string): Promise<void> => {
     logger.info({ signal }, 'Shutdown signal received');
+    try {
+      scheduler.stop();
+      logger.info('Scheduler stopped');
+    } catch (err) {
+      logger.error({ err }, 'Error stopping scheduler');
+    }
     try {
       await watcher.close();
       logger.info('Filesystem watcher closed');
