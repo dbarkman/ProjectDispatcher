@@ -147,7 +147,20 @@ export class Scheduler {
         this.logger.error({ err, projectId }, 'Heartbeat handler failed');
         // Reschedule with backoff even on failure — don't leave the project
         // without a timer, and don't retry immediately on repeated failures.
-        this.applyBackoff(projectId);
+        // applyBackoff itself can throw (e.g., DB closed during shutdown),
+        // so wrap it with a hard fallback. (Code Review #7 M1)
+        try {
+          this.applyBackoff(projectId);
+        } catch (backoffErr) {
+          this.logger.error({ err: backoffErr, projectId }, 'applyBackoff failed — using hard fallback timer');
+          // Guarantee a timer exists even when the DB is unavailable.
+          const fallbackMs = this.config.heartbeat.base_interval_seconds * 1000;
+          const fallbackTimer = setTimeout(() => {
+            this.timers.delete(projectId);
+            this.handleHeartbeat(projectId).catch(() => { /* next cycle will retry */ });
+          }, fallbackMs);
+          this.timers.set(projectId, fallbackTimer);
+        }
       });
     }, delayMs);
 
@@ -183,14 +196,26 @@ export class Scheduler {
       .all(project.project_type_id) as ProjectTypeColumnRow[];
 
     let foundWork = false;
+    let concurrencyCapHit = false;
 
     for (const col of agentColumns) {
-      // Find unclaimed tickets in this agent column
+      // If we already hit the concurrency cap in a previous column, don't
+      // bother querying more columns — tickets are deferred to next heartbeat.
+      // (Code Review #7 M2)
+      if (concurrencyCapHit) break;
+
+      // Find unclaimed tickets that don't already have a running agent.
+      // The LEFT JOIN anti-pattern prevents double-spawn when two concurrent
+      // handleHeartbeat calls query the same column — if handleHeartbeat #1
+      // already created an agent_runs row for a ticket, handleHeartbeat #2
+      // won't find it. (Security Review #7 MEDIUM-01)
       const tickets = this.db
         .prepare(
-          `SELECT id FROM tickets
-           WHERE project_id = ? AND "column" = ? AND claimed_by_run_id IS NULL
-           ORDER BY created_at`,
+          `SELECT t.id FROM tickets t
+           LEFT JOIN agent_runs ar ON ar.ticket_id = t.id AND ar.exit_status = 'running'
+           WHERE t.project_id = ? AND t."column" = ? AND t.claimed_by_run_id IS NULL
+             AND ar.id IS NULL
+           ORDER BY t.created_at`,
         )
         .all(projectId, col.column_id) as Array<{ id: string }>;
 
@@ -202,12 +227,11 @@ export class Scheduler {
         'Work found — spawning agents',
       );
 
-      // Spawn agents for each ticket (up to concurrency cap)
+      // Spawn agents for each ticket (up to concurrency cap).
+      // Distinguish concurrency errors from other errors — a DB error on
+      // ticket 1 shouldn't silently defer tickets 2-N. (Code Review #7 M2)
       for (const ticket of tickets) {
         try {
-          // runAgent enforces per-project and global concurrency limits —
-          // if we hit the cap, it throws and we skip the remaining tickets.
-          // They'll be picked up on the next heartbeat.
           await runAgent(
             { projectId, agentTypeId: col.agent_type_id, ticketId: ticket.id },
             this.db,
@@ -215,11 +239,17 @@ export class Scheduler {
             this.logger,
           );
         } catch (err) {
-          this.logger.warn(
-            { err, projectId, ticketId: ticket.id, agentType: col.agent_type_id },
-            'Failed to spawn agent — likely concurrency limit',
-          );
-          break; // Don't try more tickets if we're at the limit
+          const msg = err instanceof Error ? err.message : '';
+          if (msg.includes('Concurrency limit') || msg.includes('concurrency limit')) {
+            this.logger.warn({ projectId }, 'Concurrency cap hit — deferring remaining tickets');
+            concurrencyCapHit = true;
+          } else {
+            this.logger.error(
+              { err, projectId, ticketId: ticket.id, agentType: col.agent_type_id },
+              'runAgent failed — skipping this ticket',
+            );
+          }
+          break;
         }
       }
     }
@@ -269,13 +299,19 @@ export class Scheduler {
     const intervalMs = Math.min(baseMs * Math.pow(multiplier, emptyChecks), maxMs);
     const nextCheck = now + intervalMs;
 
-    this.db
+    const result = this.db
       .prepare(
         `UPDATE project_heartbeats
          SET next_check_at = ?, consecutive_empty_checks = ?, updated_at = ?
          WHERE project_id = ?`,
       )
       .run(nextCheck, emptyChecks, now, projectId);
+
+    // If no row was updated, the project has no heartbeat record — the
+    // in-memory timer won't survive a restart. (Code Review #7 L1)
+    if (result.changes === 0) {
+      this.logger.error({ projectId }, 'No project_heartbeats row — schedule will not survive restart');
+    }
 
     this.scheduleNext(projectId, nextCheck);
 

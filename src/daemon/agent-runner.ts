@@ -277,9 +277,12 @@ export async function runAgent(
     if (result.exitStatus !== 'success') {
       childLogger.warn({ exitStatus: result.exitStatus, errorMessage: result.errorMessage }, 'Agent run failed');
 
+      // Scope claim release to THIS run only — don't clear another agent's
+      // claim if two agents were spawned concurrently for the same ticket.
+      // (Security Review #7 MEDIUM-02)
       db.prepare(
-        'UPDATE tickets SET claimed_by_run_id = NULL, claimed_at = NULL, updated_at = ? WHERE id = ?',
-      ).run(Date.now(), ticketId);
+        'UPDATE tickets SET claimed_by_run_id = NULL, claimed_at = NULL, updated_at = ? WHERE id = ? AND claimed_by_run_id = ?',
+      ).run(Date.now(), ticketId, runId);
 
       addComment(db, ticketId, {
         type: 'block',

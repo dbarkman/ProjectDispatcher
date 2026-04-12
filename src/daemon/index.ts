@@ -4,13 +4,18 @@
 //   1. Load config
 //   2. Create logger
 //   3. Open database + run migrations + seed builtins
-//   4. Create HTTP server
-//   5. Bind and listen
+//   4. Discover projects on disk
+//   5. Crash recovery (clean orphaned runs — MUST be before scheduler)
+//   6. Create HTTP server + bind and listen
+//   7. Start filesystem watcher
+//   8. Start heartbeat scheduler
 //
-// Shutdown (SIGTERM / SIGINT):
-//   1. Close HTTP server (stop accepting new connections)
-//   2. Close database (flush WAL)
-//   3. Exit 0
+// Shutdown (SIGTERM / SIGINT — idempotent):
+//   1. Stop scheduler (no new agent runs)
+//   2. Close filesystem watcher (no new discovery events)
+//   3. Close HTTP server (drain in-flight requests)
+//   4. Close database (flush WAL)
+//   5. Exit 0
 
 import { homedir } from 'node:os';
 import { join } from 'node:path';
@@ -81,8 +86,12 @@ async function main(): Promise<void> {
   const scheduler = new Scheduler(db, config, logger);
   scheduler.start();
 
-  // Graceful shutdown
+  // Graceful shutdown — idempotent so concurrent SIGTERM + SIGINT don't
+  // race each other. (Security Review #7 LOW-01)
+  let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.info({ signal }, 'Shutdown signal received');
     try {
       scheduler.stop();
