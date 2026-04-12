@@ -8,6 +8,7 @@ import { projectRoutes } from './routes/projects.js';
 import { projectTypeRoutes } from './routes/project-types.js';
 import { agentTypeRoutes } from './routes/agent-types.js';
 import { ticketRoutes } from './routes/tickets.js';
+import { configRoutes } from './routes/config.js';
 
 export interface HttpServerDeps {
   config: Config;
@@ -89,6 +90,7 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
   await projectTypeRoutes(app, db);
   await agentTypeRoutes(app, db);
   await ticketRoutes(app, db);
+  await configRoutes(app, () => config);
 
   // Health check — no auth, lightweight, used by monitoring and CLI.
   app.get('/api/health', async () => {
