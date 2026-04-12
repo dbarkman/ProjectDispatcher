@@ -1,43 +1,34 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from 'better-sqlite3';
 
-interface TicketRow {
+interface InboxTicketRow {
   id: string;
   project_id: string;
   title: string;
   priority: string;
   updated_at: number;
-}
-
-interface ProjectRow {
-  id: string;
-  name: string;
+  project_name: string | null;
 }
 
 export async function inboxRoutes(app: FastifyInstance, db: Database): Promise<void> {
   // GET / — inbox view (all tickets in human columns)
   app.get('/', async (request, reply) => {
+    // Single JOIN query instead of N+1 lookups (Review #9 L3)
     const tickets = db
       .prepare(
-        `SELECT t.id, t.project_id, t.title, t.priority, t.updated_at
+        `SELECT t.id, t.project_id, t.title, t.priority, t.updated_at,
+                p.name AS project_name
          FROM tickets t
+         LEFT JOIN projects p ON p.id = t.project_id
          WHERE t."column" = 'human'
          ORDER BY t.updated_at DESC`,
       )
-      .all() as TicketRow[];
-
-    // Get project names for display
-    const projectIds = [...new Set(tickets.map((t) => t.project_id))];
-    const projectMap = new Map<string, string>();
-    for (const pid of projectIds) {
-      const p = db.prepare('SELECT name FROM projects WHERE id = ?').get(pid) as ProjectRow | undefined;
-      if (p) projectMap.set(pid, p.name);
-    }
+      .all() as InboxTicketRow[];
 
     const ticketData = tickets.map((t) => ({
       ...t,
       shortId: t.id.slice(0, 8),
-      projectName: projectMap.get(t.project_id) ?? 'Unknown',
+      projectName: t.project_name ?? 'Unknown',
     }));
 
     return reply.view('inbox.hbs', {

@@ -1,6 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from 'better-sqlite3';
+import { z } from 'zod';
 import { listProjects, getProject } from '../../db/queries/projects.js';
+import { getInboxCount } from './helpers.js';
+
+const uuidParam = z.object({ id: z.string().uuid() });
 
 export async function projectUiRoutes(app: FastifyInstance, db: Database): Promise<void> {
   // GET /ui/projects — projects list
@@ -11,12 +15,14 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database): Promi
       pageTitle: 'Projects',
       breadcrumbs: [{ label: 'Projects', href: '/ui/projects' }],
       projects,
+      inboxCount: getInboxCount(db) || undefined,
     });
   });
 
   // GET /ui/projects/:id — project board
   app.get<{ Params: { id: string } }>('/ui/projects/:id', async (request, reply) => {
-    const project = getProject(db, request.params.id);
+    const { id } = uuidParam.parse(request.params);
+    const project = getProject(db, id);
     if (!project) return reply.status(404).send('Project not found');
 
     // Get columns for this project type
@@ -74,6 +80,7 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database): Promi
     return reply.view('board.hbs', {
       activePage: 'projects',
       pageTitle: project.name,
+      inboxCount: getInboxCount(db) || undefined,
       breadcrumbs: [
         { label: 'Projects', href: '/ui/projects' },
         { label: project.name, href: `/ui/projects/${project.id}` },

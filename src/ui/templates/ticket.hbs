@@ -57,7 +57,7 @@
   <h3 class="text-sm font-semibold text-gray-400 mb-3">Actions</h3>
 
   <!-- Add comment -->
-  <form hx-post="/api/tickets/{{ticket.id}}/comments" hx-swap="none"
+  <form hx-post="/api/tickets/{{ticket.id}}/comments" hx-ext="json-enc" hx-swap="none"
         hx-on::after-request="if(event.detail.successful) location.reload()"
         class="mb-4">
     <input type="hidden" name="type" value="comment">
@@ -71,7 +71,7 @@
   </form>
 
   <!-- Move ticket -->
-  <form hx-post="/api/tickets/{{ticket.id}}/move" hx-swap="none"
+  <form hx-post="/api/tickets/{{ticket.id}}/move" hx-ext="json-enc" hx-swap="none"
         hx-on::after-request="if(event.detail.successful) location.reload()"
         class="flex items-center gap-2">
     <input type="hidden" name="author" value="human">

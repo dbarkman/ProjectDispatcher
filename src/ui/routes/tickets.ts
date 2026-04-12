@@ -1,11 +1,16 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from 'better-sqlite3';
+import { z } from 'zod';
 import { getTicketWithComments } from '../../db/queries/tickets.js';
+import { getInboxCount } from './helpers.js';
+
+const uuidParam = z.object({ id: z.string().uuid() });
 
 export async function ticketUiRoutes(app: FastifyInstance, db: Database): Promise<void> {
   // GET /ui/tickets/:id — ticket detail with thread
   app.get<{ Params: { id: string } }>('/ui/tickets/:id', async (request, reply) => {
-    const ticket = getTicketWithComments(db, request.params.id);
+    const { id } = uuidParam.parse(request.params);
+    const ticket = getTicketWithComments(db, id);
     if (!ticket) return reply.status(404).send('Ticket not found');
 
     const project = db
@@ -34,6 +39,7 @@ export async function ticketUiRoutes(app: FastifyInstance, db: Database): Promis
     return reply.view('ticket.hbs', {
       activePage: 'inbox',
       pageTitle: ticket.title,
+      inboxCount: getInboxCount(db) || undefined,
       breadcrumbs: [
         { label: 'Inbox', href: '/' },
         ...(project

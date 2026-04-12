@@ -20,8 +20,6 @@
       {{#if this.isDone}}bg-navy-900/30 border border-green-900/20{{/if}}
     "
       data-column="{{this.column_id}}"
-      hx-post="/api/tickets/{ticket-id}/move"
-      hx-trigger="drop"
     >
       {{#each this.tickets}}
       <div class="card cursor-pointer hover:border-accent/30"

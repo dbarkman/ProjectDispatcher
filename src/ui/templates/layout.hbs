@@ -6,6 +6,7 @@
   <title>{{#if title}}{{title}} — {{/if}}Project Dispatcher</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/htmx.org@2.0.4"></script>
+  <script src="https://unpkg.com/htmx-ext-json-enc@2.0.3/json-enc.js"></script>
   <script>
     tailwind.config = {
       darkMode: 'class',
@@ -109,11 +110,10 @@
           <h2 class="text-xl font-semibold text-white mt-0.5">{{pageTitle}}</h2>
           {{/if}}
         </div>
-        {{#if actions}}
-        <div class="flex gap-2">
-          {{{actions}}}
-        </div>
-        {{/if}}
+        {{!-- Actions slot removed: the {{{actions}}} triple-brace was an
+             XSS-prone pattern. When action buttons are needed, add them as
+             structured data (array of {label, href} objects) rendered with
+             {{#each}} and double-braces. (Review #9 L1 / MEDIUM) --}}
       </header>
 
       <!-- Page content -->
