@@ -39,16 +39,20 @@ export function createProject(db: Database, data: CreateProjectData): Project {
   const id = randomUUID();
   const now = Date.now();
 
-  db.prepare(
-    `INSERT INTO projects (id, name, path, project_type_id, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, 'active', ?, ?)`,
-  ).run(id, data.name, data.path, data.projectTypeId, now, now);
+  // Transactional: both rows land or neither does. Without this, a failure
+  // on the heartbeat INSERT would leave an orphaned project with no heartbeat
+  // row — subtle and hard to diagnose. (Code Review #4 F-01)
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO projects (id, name, path, project_type_id, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'active', ?, ?)`,
+    ).run(id, data.name, data.path, data.projectTypeId, now, now);
 
-  // Also create a heartbeat row for this project
-  db.prepare(
-    `INSERT INTO project_heartbeats (project_id, next_check_at, updated_at)
-     VALUES (?, ?, ?)`,
-  ).run(id, now + 300_000, now); // 5 min from now
+    db.prepare(
+      `INSERT INTO project_heartbeats (project_id, next_check_at, updated_at)
+       VALUES (?, ?, ?)`,
+    ).run(id, now + 300_000, now);
+  })();
 
   return getProject(db, id)!;
 }

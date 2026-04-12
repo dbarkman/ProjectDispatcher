@@ -41,8 +41,12 @@ const updateProjectTypeBody = z.object({
   ).optional(),
 });
 
-// Use a simple string param for project type IDs (slugs, not UUIDs)
-const slugParam = z.object({ id: z.string().min(1) });
+// Slug param — same constraint as create-time. Prevents junk like
+// "../../etc/passwd" from even reaching the DB query (parameterized anyway,
+// but consistent validation is cleaner). (Code Review #4 F-06)
+const slugParam = z.object({
+  id: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/, 'Must be a lowercase slug'),
+});
 
 export async function projectTypeRoutes(app: FastifyInstance, db: Database): Promise<void> {
   // GET /api/project-types

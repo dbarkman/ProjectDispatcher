@@ -1,37 +1,36 @@
 import type { FastifyInstance } from 'fastify';
+import { z } from 'zod';
 import { writeFile } from 'node:fs/promises';
 import { loadConfig, reloadConfig, DEFAULT_CONFIG_PATH } from '../../config.js';
-import { configSchema } from '../../config.schema.js';
+import { configSchema, type Config } from '../../config.schema.js';
 
 /**
  * Config API routes. Reads and writes the daemon config file.
  *
- * Note: these routes operate on the file, not on an in-memory singleton.
- * The daemon's "current effective config" is whatever was loaded at startup
- * (or last reload). To make a PATCH take effect, either POST /api/config/reload
- * after, or the daemon restarts. In practice, the PATCH handler writes the
- * file and then reloads automatically — but the "effective" config is always
- * whatever the daemon is currently using, not what's on disk.
- *
- * For MVP this is fine: the daemon holds one config ref, and these routes
- * read/write the file. The daemon's SIGHUP handler (when wired in MVP-06+)
- * calls reloadConfig() to pick up changes.
+ * The `getConfig` getter and `setConfig` setter close over the same
+ * mutable `config` binding in `http.ts`, so PATCH/reload updates are
+ * immediately visible to subsequent GET requests and to other routes
+ * that read `config` (like the health check). (Code Review #4 F-04)
  */
 export async function configRoutes(
   app: FastifyInstance,
-  getEffectiveConfig: () => ReturnType<typeof loadConfig>,
+  getConfig: () => Config,
+  setConfig: (c: Config) => void,
   configPath: string = DEFAULT_CONFIG_PATH,
 ): Promise<void> {
   // GET /api/config — returns the current effective config
   app.get('/api/config', async () => {
-    return getEffectiveConfig();
+    return getConfig();
   });
 
   // PATCH /api/config — update the config file, validate, reload
   app.patch('/api/config', async (request, reply) => {
-    const patch = request.body;
+    // Zod-parse the body BEFORE deepMerge to prevent prototype pollution
+    // and to reject non-object inputs (null, string, array) with a 400
+    // instead of a 500 TypeError. (Code Review #4 F-02, Security Review #4 MEDIUM)
+    const patch = z.record(z.string(), z.unknown()).parse(request.body);
 
-    // Read current file, merge patch, validate the result
+    // Read current file config as the merge base
     let current: Record<string, unknown>;
     try {
       const loaded = loadConfig(configPath);
@@ -40,7 +39,7 @@ export async function configRoutes(
       current = {};
     }
 
-    const merged = deepMerge(current, patch as Record<string, unknown>);
+    const merged = deepMerge(current, patch);
 
     // Validate the merged config — if invalid, reject without writing
     const result = configSchema.safeParse(merged);
@@ -55,25 +54,37 @@ export async function configRoutes(
     // Write the merged config to disk
     await writeFile(configPath, JSON.stringify(merged, null, 2) + '\n', 'utf8');
 
-    // Reload so the daemon picks it up
+    // Reload and update the daemon's effective config
     const reloaded = reloadConfig(configPath);
+    setConfig(reloaded);
     return reloaded;
   });
 
   // POST /api/config/reload — force a reload from disk
   app.post('/api/config/reload', async () => {
-    const config = reloadConfig(configPath);
-    return { status: 'reloaded', config };
+    const reloaded = reloadConfig(configPath);
+    setConfig(reloaded);
+    return { status: 'reloaded', config: reloaded };
   });
 }
 
-/** Simple shallow-ish merge for config objects (one level of nesting). */
+/**
+ * Shallow-ish merge for config objects (one level of nesting).
+ *
+ * Defense in depth: `Object.hasOwn` check prevents prototype pollution
+ * via `__proto__` keys. Even though the caller Zod-parses the input,
+ * this guard costs nothing and catches the case if anyone calls
+ * deepMerge directly in the future. (Security Review #4 MEDIUM)
+ */
 function deepMerge(
   target: Record<string, unknown>,
   source: Record<string, unknown>,
 ): Record<string, unknown> {
   const result = { ...target };
-  for (const [key, value] of Object.entries(source)) {
+  for (const key of Object.keys(source)) {
+    if (!Object.hasOwn(source, key)) continue;
+
+    const value = source[key];
     if (
       value !== null &&
       typeof value === 'object' &&

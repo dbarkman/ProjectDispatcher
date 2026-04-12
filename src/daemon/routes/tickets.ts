@@ -134,21 +134,28 @@ export async function ticketRoutes(app: FastifyInstance, db: Database): Promise<
       | undefined;
     if (!ticket) return reply.status(404).send({ error: 'Ticket not found' });
 
-    // Verify target column exists for the ticket's project type
+    // Verify target column exists for the ticket's project type.
+    // The project lookup should always succeed (FK enforces ticket→project),
+    // but if it doesn't, surface the inconsistency instead of silently
+    // skipping validation. (Code Review #4 F-05)
     const project = db
       .prepare('SELECT project_type_id FROM projects WHERE id = ?')
       .get(ticket.project_id) as { project_type_id: string } | undefined;
-    if (project) {
-      const colExists = db
-        .prepare(
-          'SELECT 1 FROM project_type_columns WHERE project_type_id = ? AND column_id = ?',
-        )
-        .get(project.project_type_id, body.to_column);
-      if (!colExists) {
-        return reply.status(400).send({
-          error: `Column '${body.to_column}' does not exist for project type '${project.project_type_id}'`,
-        });
-      }
+    if (!project) {
+      return reply
+        .status(500)
+        .send({ error: 'Project not found for ticket — data integrity error' });
+    }
+
+    const colExists = db
+      .prepare(
+        'SELECT 1 FROM project_type_columns WHERE project_type_id = ? AND column_id = ?',
+      )
+      .get(project.project_type_id, body.to_column);
+    if (!colExists) {
+      return reply.status(400).send({
+        error: `Column '${body.to_column}' does not exist for project type '${project.project_type_id}'`,
+      });
     }
 
     const moved = moveTicket(db, id, {

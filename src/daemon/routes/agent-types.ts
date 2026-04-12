@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
-import { existsSync } from 'node:fs';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
@@ -36,7 +35,10 @@ function resolvePromptPath(filename: string): string {
   return full;
 }
 
-const slugParam = z.object({ id: z.string().min(1) });
+// Slug param — same constraint as create-time. (Code Review #4 F-06)
+const slugParam = z.object({
+  id: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/, 'Must be a lowercase slug'),
+});
 
 const createAgentTypeBody = z.object({
   id: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/, 'Must be a lowercase slug'),
@@ -73,15 +75,19 @@ export async function agentTypeRoutes(app: FastifyInstance, db: Database): Promi
     const at = getAgentType(db, id);
     if (!at) return reply.status(404).send({ error: 'Agent type not found' });
 
-    // Read prompt file — no stale cache, always fresh from disk
+    // Read prompt file — no stale cache, always fresh from disk.
+    // Uses try/catch instead of existsSync to avoid sync I/O in a request
+    // handler (Code Review #4 F-03, Security Review #4 LOW).
     let promptText: string | null = null;
     try {
       const promptPath = resolvePromptPath(at.system_prompt_path);
-      if (existsSync(promptPath)) {
-        promptText = await readFile(promptPath, 'utf8');
+      promptText = await readFile(promptPath, 'utf8');
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        // Unexpected error (not "file missing") — log but don't fail the request
+        request.log.warn({ err, path: at.system_prompt_path }, 'Failed to read prompt file');
       }
-    } catch {
-      // Path resolution failed or file missing — return null, not an error
+      // ENOENT or path resolution failure → promptText stays null
     }
 
     return { ...at, prompt_text: promptText };
