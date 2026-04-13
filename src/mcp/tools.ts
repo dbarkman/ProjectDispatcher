@@ -210,6 +210,21 @@ export function registerTools(server: McpServer, db: Database, ctx: McpContext):
       ).run(Date.now(), ctx.ticketId);
     })();
 
+    // Notify the daemon's scheduler to reschedule the heartbeat timer.
+    // The MCP server runs as a separate subprocess, so it can't call the
+    // scheduler directly — hit the wake API endpoint on localhost instead.
+    // moveTicket already updated next_check_at in the DB, but the
+    // scheduler's in-memory timer needs to be refreshed to match.
+    try {
+      await fetch(`http://127.0.0.1:${process.env['DISPATCH_PORT'] ?? '5757'}/api/projects/${ctx.projectId}/wake`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch {
+      // Best effort — the scheduler will eventually pick it up on its
+      // next heartbeat tick even if this fails.
+    }
+
     return { content: [{ type: 'text' as const, text: `Ticket moved to column '${args.column_id}'` }] };
   });
 
