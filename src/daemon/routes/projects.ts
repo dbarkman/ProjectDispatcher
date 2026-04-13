@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from 'better-sqlite3';
+import type { Scheduler } from '../scheduler.js';
 import {
   createProject,
   getProject,
@@ -15,7 +16,7 @@ import {
   idParam,
 } from '../schemas.js';
 
-export async function projectRoutes(app: FastifyInstance, db: Database): Promise<void> {
+export async function projectRoutes(app: FastifyInstance, db: Database, scheduler?: Scheduler): Promise<void> {
   // GET /api/projects — list (filterable by status)
   app.get('/api/projects', async (request) => {
     const query = listProjectsQuery.parse(request.query);
@@ -101,6 +102,9 @@ export async function projectRoutes(app: FastifyInstance, db: Database): Promise
       return reply.status(404).send({ error: 'Project not found' });
     }
     wakeProject(db, id);
+    // Also reschedule the scheduler's in-memory timer so the heartbeat
+    // fires at the new next_check_at, not the old one. (Gap fix #2)
+    scheduler?.resetProject(id);
     return { status: 'heartbeat_reset' };
   });
 }

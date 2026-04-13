@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
+import type { Scheduler } from '../scheduler.js';
 import {
   createTicket,
   getTicketWithComments,
@@ -50,7 +51,7 @@ const listTicketsQuery = z.object({
   priority: z.enum(['low', 'normal', 'high', 'urgent']).optional(),
 });
 
-export async function ticketRoutes(app: FastifyInstance, db: Database): Promise<void> {
+export async function ticketRoutes(app: FastifyInstance, db: Database, scheduler?: Scheduler): Promise<void> {
   // GET /api/tickets — list with filters
   app.get('/api/tickets', async (request) => {
     const query = listTicketsQuery.parse(request.query);
@@ -166,6 +167,18 @@ export async function ticketRoutes(app: FastifyInstance, db: Database): Promise<
       author: body.author,
     });
     if (!moved) return reply.status(404).send({ error: 'Ticket not found' });
+
+    // If the target column is an agent column, reschedule the scheduler's
+    // in-memory timer so the heartbeat fires promptly. moveTicket already
+    // updates next_check_at in the DB, but the scheduler timer needs to
+    // be refreshed to match. (Gap fix #2)
+    const targetCol = db
+      .prepare('SELECT agent_type_id FROM project_type_columns WHERE project_type_id = ? AND column_id = ?')
+      .get(project.project_type_id, body.to_column) as { agent_type_id: string | null } | undefined;
+    if (targetCol?.agent_type_id && scheduler) {
+      scheduler.resetProject(ticket.project_id);
+    }
+
     return moved;
   });
 

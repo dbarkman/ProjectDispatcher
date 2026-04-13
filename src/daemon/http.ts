@@ -4,6 +4,7 @@ import { z } from 'zod';
 import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
 import { type Config } from '../config.schema.js';
+import type { Scheduler } from './scheduler.js';
 import { projectRoutes } from './routes/projects.js';
 import { projectTypeRoutes } from './routes/project-types.js';
 import { agentTypeRoutes } from './routes/agent-types.js';
@@ -16,6 +17,7 @@ export interface HttpServerDeps {
   config: Config;
   db: Database;
   logger: Logger;
+  scheduler?: Scheduler; // Optional: created before HTTP, started after listen
 }
 
 /**
@@ -36,7 +38,7 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
   // handlers that read `config` close over this same binding, so a reload
   // is immediately visible to subsequent requests. (Code Review #4 F-04)
   let { config } = deps;
-  const { db, logger } = deps;
+  const { db, logger, scheduler } = deps;
 
   const app = Fastify({
     // Fastify 5 uses `loggerInstance` for external Pino instances (not
@@ -92,10 +94,10 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
   });
 
   // --- Route registration ---
-  await projectRoutes(app, db);
+  await projectRoutes(app, db, scheduler);
   await projectTypeRoutes(app, db);
   await agentTypeRoutes(app, db);
-  await ticketRoutes(app, db);
+  await ticketRoutes(app, db, scheduler);
   await configRoutes(app, () => config, (c: Config) => { config = c; });
   await discoveryRoutes(app, db, config);
 

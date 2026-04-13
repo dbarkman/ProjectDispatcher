@@ -70,20 +70,23 @@ async function main(): Promise<void> {
     logger.warn(recovery, 'Crash recovery cleaned up stale state');
   }
 
-  // 6. HTTP server
-  const app = await createHttpServer({ config, db, logger });
+  // 6. Create scheduler instance (but don't start it yet — HTTP routes
+  //    need a reference to call resetProject on ticket moves and wakes).
+  const scheduler = new Scheduler(db, config, logger);
 
-  // 6. Listen
+  // 7. HTTP server — pass scheduler so routes can trigger heartbeat resets
+  const app = await createHttpServer({ config, db, logger, scheduler });
+
+  // 8. Listen
   const port = config.ui.port;
   await app.listen({ host: BIND_HOST, port });
   logger.info({ host: BIND_HOST, port }, 'Daemon listening');
 
-  // 8. Start filesystem watcher for live project discovery
+  // 9. Start filesystem watcher for live project discovery
   const watcher = startWatcher(db, config, logger);
   logger.info('Filesystem watcher started');
 
-  // 9. Start the heartbeat scheduler
-  const scheduler = new Scheduler(db, config, logger);
+  // 10. Start the heartbeat scheduler (after listen so the server is ready)
   scheduler.start();
 
   // Graceful shutdown — idempotent so concurrent SIGTERM + SIGINT don't
