@@ -16,7 +16,7 @@
 }
 
 .nav-link:hover {
-  background-color: rgba(82, 82, 82, 0.3); /* neutral-600/30 */
+  background-color: rgba(90, 90, 90, 0.3);
   color: #e5e5e5;
 }
 
@@ -35,14 +35,14 @@
 
 /* Cards */
 .card {
-  background-color: #252525; /* neutral-800 */
-  border: 1px solid #2e2e2e; /* neutral-700 */
+  background-color: #2e2e2e; /* navy-800 */
+  border: 1px solid #383838; /* navy-700 */
   border-radius: 0.5rem;
   padding: 1rem;
 }
 
 .card:hover {
-  border-color: #404040; /* neutral-500 */
+  border-color: #4a4a4a; /* navy-500 */
 }
 
 /* Priority dots */
@@ -55,7 +55,7 @@
 .priority-urgent { background-color: #ef4444; }
 .priority-high { background-color: #f59e0b; }
 .priority-normal { background-color: #6b7280; }
-.priority-low { background-color: #404040; }
+.priority-low { background-color: #4a4a4a; }
 
 /* Status badges */
 .badge {
@@ -73,8 +73,8 @@
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #404040; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #525252; }
+::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #5c5c5c; }
 
 /* htmx loading indicator */
 .htmx-indicator {
