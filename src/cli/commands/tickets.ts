@@ -144,22 +144,74 @@ export function registerTicketCommands(program: Command): void {
       }
     });
 
-  // dispatch ticket new --project <id> --title "..." [--body "..."] [--column <col>]
+  // dispatch ticket new [--project <id> --title "..." ...] (Gap fix #10 — interactive mode)
+  // If --project and --title are provided, runs non-interactively.
+  // If either is missing, prompts for the required fields.
   ticket
     .command('new')
-    .description('Create a new ticket')
-    .requiredOption('--project <id>', 'Project ID')
-    .requiredOption('--title <title>', 'Ticket title')
+    .description('Create a new ticket (interactive if no --project/--title)')
+    .option('--project <id>', 'Project ID')
+    .option('--title <title>', 'Ticket title')
     .option('--body <body>', 'Ticket body/description')
     .option('--column <column>', 'Initial column (default: human)')
     .option('--priority <priority>', 'Priority: low, normal, high, urgent')
-    .action(async (opts: { project: string; title: string; body?: string; column?: string; priority?: string }) => {
+    .action(async (opts: { project?: string; title?: string; body?: string; column?: string; priority?: string }) => {
+      let projectId = opts.project;
+      let title = opts.title;
+      let body = opts.body;
+      let priority = opts.priority;
+
+      // Interactive mode if required fields are missing
+      if (!projectId || !title) {
+        const readline = await import('node:readline/promises');
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+
+        try {
+          if (!projectId) {
+            const projects = await api.get<Array<{ id: string; name: string }>>('/api/projects');
+            if (projects.length === 0) {
+              console.log(chalk.red('No projects registered. Register one first with: dispatch projects register'));
+              return;
+            }
+            console.log(chalk.cyan('\nAvailable projects:'));
+            projects.forEach((p, i) => console.log(`  ${i + 1}. ${p.name} (${p.id.slice(0, 8)})`));
+            const choice = await rl.question('\nProject number: ');
+            const idx = parseInt(choice, 10) - 1;
+            if (idx < 0 || idx >= projects.length) {
+              console.log(chalk.red('Invalid selection.'));
+              return;
+            }
+            projectId = projects[idx]!.id;
+          }
+
+          if (!title) {
+            title = await rl.question('Title: ');
+            if (!title.trim()) {
+              console.log(chalk.red('Title is required.'));
+              return;
+            }
+          }
+
+          if (!body) {
+            const inputBody = await rl.question('Description (Enter to skip): ');
+            if (inputBody.trim()) body = inputBody;
+          }
+
+          if (!priority) {
+            const inputPriority = await rl.question('Priority (low/normal/high/urgent, Enter for normal): ');
+            if (inputPriority.trim()) priority = inputPriority.trim();
+          }
+        } finally {
+          rl.close();
+        }
+      }
+
       const t = await api.post<Ticket>('/api/tickets', {
-        project_id: opts.project,
-        title: opts.title,
-        body: opts.body,
+        project_id: projectId,
+        title,
+        body,
         column: opts.column,
-        priority: opts.priority,
+        priority,
       });
       console.log(chalk.green(`Ticket created: ${shortId(t.id)} "${t.title}" in column ${t.column}`));
     });
