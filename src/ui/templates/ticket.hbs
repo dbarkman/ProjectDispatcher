@@ -11,7 +11,7 @@
     <span class="font-mono text-xs">{{ticket.shortId}}</span>
   </div>
   {{#if ticket.body}}
-  <div class="mt-3 text-sm text-gray-300 bg-navy-900 rounded-lg p-4 border border-navy-700">
+  <div class="mt-3 text-sm text-gray-300 bg-navy-900 rounded-lg p-4 border border-navy-700 whitespace-pre-wrap">
     {{ticket.body}}
   </div>
   {{/if}}
@@ -21,6 +21,104 @@
   </div>
   {{/if}}
 </div>
+
+<!-- Quick action buttons (Gap fix #8) -->
+<div class="flex gap-2 mb-6">
+  {{#if prevColumn}}
+  <form hx-post="/api/tickets/{{ticket.id}}/move" hx-ext="json-enc" hx-swap="none"
+        hx-on::after-request="if(event.detail.successful) location.reload()">
+    <input type="hidden" name="to_column" value="{{prevColumn.column_id}}">
+    <input type="hidden" name="author" value="human">
+    <button type="submit"
+      class="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-gray-200 text-sm rounded-lg transition-colors">
+      &larr; Send back to {{prevColumn.name}}
+    </button>
+  </form>
+  {{/if}}
+  {{#if nextColumn}}
+  <form hx-post="/api/tickets/{{ticket.id}}/move" hx-ext="json-enc" hx-swap="none"
+        hx-on::after-request="if(event.detail.successful) location.reload()">
+    <input type="hidden" name="to_column" value="{{nextColumn.column_id}}">
+    <input type="hidden" name="author" value="human">
+    <button type="submit"
+      class="px-4 py-2 bg-green-700 hover:bg-green-600 text-white text-sm rounded-lg transition-colors">
+      Approve to {{nextColumn.name}} &rarr;
+    </button>
+  </form>
+  {{/if}}
+  {{#unless (eq ticket.column "done")}}
+  <form hx-post="/api/tickets/{{ticket.id}}/move" hx-ext="json-enc" hx-swap="none"
+        hx-on::after-request="if(event.detail.successful) location.reload()">
+    <input type="hidden" name="to_column" value="done">
+    <input type="hidden" name="author" value="human">
+    <button type="submit"
+      class="px-4 py-2 bg-navy-800 hover:bg-navy-700 text-gray-400 text-sm rounded-lg transition-colors">
+      Override to Done
+    </button>
+  </form>
+  {{/unless}}
+</div>
+
+<!-- Agent runs (Gap fix #5) -->
+{{#if agentRuns.length}}
+<div class="mb-6">
+  <h3 class="text-sm font-semibold text-gray-400 mb-3">Agent Runs</h3>
+  <div class="space-y-2">
+    {{#each agentRuns}}
+    <div class="card flex items-center justify-between text-sm">
+      <div>
+        <span class="text-gray-300 font-medium">{{this.agent_type_id}}</span>
+        <span class="text-gray-500 text-xs ml-2">{{this.shortId}}</span>
+        <span class="ml-2 text-xs
+          {{#if (eq this.exit_status 'success')}}text-green-400{{/if}}
+          {{#if (eq this.exit_status 'crashed')}}text-red-400{{/if}}
+          {{#if (eq this.exit_status 'timeout')}}text-yellow-400{{/if}}
+          {{#if (eq this.exit_status 'running')}}text-accent{{/if}}
+        ">{{this.exit_status}}</span>
+        <span class="text-gray-500 text-xs ml-2">{{this.durationStr}}</span>
+      </div>
+      {{#if this.hasTranscript}}
+      <button onclick="loadTranscript('{{this.id}}')"
+        class="text-xs text-accent hover:text-accent-hover underline">
+        View Transcript
+      </button>
+      {{/if}}
+    </div>
+    {{/each}}
+  </div>
+</div>
+{{/if}}
+
+<!-- Transcript modal (Gap fix #5) -->
+<div id="transcript-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+  <div class="bg-navy-900 border border-navy-700 rounded-xl w-[90vw] max-w-4xl max-h-[80vh] flex flex-col">
+    <div class="flex items-center justify-between px-4 py-3 border-b border-navy-700">
+      <h3 class="text-sm font-semibold text-gray-300">Agent Transcript</h3>
+      <button onclick="document.getElementById('transcript-modal').classList.add('hidden')"
+        class="text-gray-500 hover:text-gray-300">&times;</button>
+    </div>
+    <pre id="transcript-content" class="flex-1 overflow-y-auto p-4 text-xs text-gray-300 font-mono whitespace-pre-wrap">Loading...</pre>
+  </div>
+</div>
+<script>
+  async function loadTranscript(runId) {
+    const modal = document.getElementById('transcript-modal');
+    const content = document.getElementById('transcript-content');
+    modal.classList.remove('hidden');
+    content.textContent = 'Loading...';
+    try {
+      const res = await fetch(`/api/agent-runs/${runId}/transcript`);
+      if (res.ok) {
+        content.textContent = await res.text();
+      } else {
+        const err = await res.json();
+        content.textContent = `Error: ${err.error || 'Failed to load transcript'}`;
+      }
+    } catch {
+      content.textContent = 'Error: network failure';
+    }
+  }
+</script>
 
 <!-- Comment thread -->
 <div class="space-y-4 mb-8">
@@ -54,9 +152,8 @@
 
 <!-- Actions -->
 <div class="border-t border-navy-700 pt-6">
-  <h3 class="text-sm font-semibold text-gray-400 mb-3">Actions</h3>
+  <h3 class="text-sm font-semibold text-gray-400 mb-3">Add Comment</h3>
 
-  <!-- Add comment -->
   <form hx-post="/api/tickets/{{ticket.id}}/comments" hx-ext="json-enc" hx-swap="none"
         hx-on::after-request="if(event.detail.successful) location.reload()"
         class="mb-4">
@@ -70,22 +167,24 @@
     </button>
   </form>
 
-  <!-- Move ticket -->
-  <form hx-post="/api/tickets/{{ticket.id}}/move" hx-ext="json-enc" hx-swap="none"
-        hx-on::after-request="if(event.detail.successful) location.reload()"
-        class="flex items-center gap-2">
-    <input type="hidden" name="author" value="human">
-    <select name="to_column"
-      class="bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
-      {{#each columns}}
-      <option value="{{this.column_id}}" {{#if (eq this.column_id ../ticket.column)}}disabled{{/if}}>
-        {{this.name}}
-      </option>
-      {{/each}}
-    </select>
-    <button type="submit"
-      class="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-gray-200 text-sm rounded-lg transition-colors">
-      Move
-    </button>
-  </form>
+  <div class="border-t border-navy-700 pt-4">
+    <h3 class="text-sm font-semibold text-gray-400 mb-3">Move Ticket</h3>
+    <form hx-post="/api/tickets/{{ticket.id}}/move" hx-ext="json-enc" hx-swap="none"
+          hx-on::after-request="if(event.detail.successful) location.reload()"
+          class="flex items-center gap-2">
+      <input type="hidden" name="author" value="human">
+      <select name="to_column"
+        class="bg-navy-900 border border-navy-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+        {{#each columns}}
+        <option value="{{this.column_id}}" {{#if (eq this.column_id ../ticket.column)}}disabled{{/if}}>
+          {{this.name}}
+        </option>
+        {{/each}}
+      </select>
+      <button type="submit"
+        class="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-gray-200 text-sm rounded-lg transition-colors">
+        Move
+      </button>
+    </form>
+  </div>
 </div>
