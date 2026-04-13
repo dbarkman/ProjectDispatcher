@@ -2,11 +2,11 @@ import type { FastifyInstance } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import { mkdir, writeFile, stat, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { idParam } from '../schemas.js';
+import { DEFAULT_TASKS_DIR } from '../../db/index.js';
 import {
   createAttachment,
   listAttachments,
@@ -16,9 +16,9 @@ import {
 
 /**
  * Base directory for attachment file storage.
- * Cross-platform via os.homedir() — no hardcoded paths.
+ * Derived from DEFAULT_TASKS_DIR — single source of truth for the .tasks path.
  */
-const ATTACHMENTS_DIR = join(homedir(), 'Development', '.tasks', 'artifacts', 'attachments');
+const ATTACHMENTS_DIR = join(DEFAULT_TASKS_DIR, 'artifacts', 'attachments');
 
 /**
  * Allowed MIME types for uploads. Images only for now (screenshot use case).
@@ -58,8 +58,10 @@ export async function attachmentRoutes(app: FastifyInstance, db: Database): Prom
         return reply.status(400).send({ error: 'No file uploaded' });
       }
 
-      // Validate MIME type
+      // Validate MIME type. Drain the stream first so @fastify/multipart
+      // doesn't stall on an unconsumed part. (Code Review Merge MEDIUM-02)
       if (!ALLOWED_MIME_TYPES.has(file.mimetype)) {
+        await file.toBuffer(); // drain before returning
         return reply.status(400).send({
           error: `Unsupported file type: ${file.mimetype}. Allowed: ${[...ALLOWED_MIME_TYPES].join(', ')}`,
         });
