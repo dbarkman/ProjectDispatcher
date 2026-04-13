@@ -2,7 +2,6 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import { writeFile, mkdir, unlink } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { homedir } from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
@@ -178,29 +177,22 @@ export async function runAgent(
 
     childLogger.info({ cwd: project.path }, 'Spawning claude subprocess');
 
-    // Subprocess environment: WHITELIST ONLY. Do NOT spread process.env.
-    // The claude CLI needs ANTHROPIC_API_KEY to authenticate. We pass only
-    // what's required and nothing else — no leaked AWS keys, DB URLs, or
-    // CI tokens from the developer's shell. (Review #6 H2 / HIGH-01)
-    const subprocessEnv: Record<string, string> = {
-      HOME: homedir(),
-      PATH: process.env['PATH'] ?? '',
-      NODE_ENV: process.env['NODE_ENV'] ?? 'production',
-    };
-    // Claude authentication — pass the API key if present
-    if (process.env['ANTHROPIC_API_KEY']) {
-      subprocessEnv['ANTHROPIC_API_KEY'] = process.env['ANTHROPIC_API_KEY'];
-    }
-    if (process.env['ANTHROPIC_BASE_URL']) {
-      subprocessEnv['ANTHROPIC_BASE_URL'] = process.env['ANTHROPIC_BASE_URL'];
-    }
+    // Subprocess environment: inherit the full parent env.
+    //
+    // The claude CLI authenticates via OAuth tokens stored in ~/.claude/
+    // (not just ANTHROPIC_API_KEY). Scrubbing the env breaks OAuth auth,
+    // which is how most Claude Code users authenticate. Since this is a
+    // single-user localhost tool where the subprocess runs as the same
+    // user with the same trust level, inheriting the env is the correct
+    // default. A future config option can offer a scrubbed whitelist mode
+    // for users who want it.
 
     // Spawn the subprocess
     const result = await new Promise<AgentRunResult>((resolvePromise) => {
       const child: ChildProcess = spawn(config.claude_cli.binary_path, claudeArgs, {
         cwd: project.path,
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: subprocessEnv,
+        env: { ...process.env, NODE_ENV: 'production' },
       });
 
       child.stdout?.pipe(transcriptStream);
