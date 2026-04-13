@@ -6,9 +6,8 @@
 //
 // Gap fixes #12 (backup) and #13 (retention cleanup).
 
-import { mkdir, readdir, unlink, stat } from 'node:fs/promises';
+import { mkdir, readdir, unlink, stat, access } from 'node:fs/promises';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
 import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
 import type { Config } from '../config.schema.js';
@@ -77,10 +76,13 @@ async function runBackup(db: Database, config: Config, logger: Logger): Promise<
   const today = new Date().toISOString().slice(0, 10);
   const backupPath = join(BACKUPS_DIR, `tasks-${today}.db`);
 
-  // Skip if today's backup already exists
-  if (existsSync(backupPath)) {
+  // Skip if today's backup already exists (async — no sync fs in daemon paths)
+  try {
+    await access(backupPath);
     logger.debug({ backupPath }, 'Backup already exists for today');
     return;
+  } catch {
+    // File doesn't exist — proceed with backup
   }
 
   // VACUUM INTO creates a clean, compacted copy of the database.
@@ -118,7 +120,7 @@ async function runRetentionCleanup(config: Config, logger: Logger): Promise<void
 
   // Clean transcripts
   const transcriptMaxAge = config.retention.transcript_days * 24 * 60 * 60 * 1000;
-  if (existsSync(RUNS_DIR)) {
+  try {
     const files = await readdir(RUNS_DIR);
     for (const file of files) {
       if (!file.endsWith('.log') && !file.endsWith('.json')) continue;
@@ -132,11 +134,13 @@ async function runRetentionCleanup(config: Config, logger: Logger): Promise<void
         // File may have been deleted by another process
       }
     }
+  } catch {
+    // RUNS_DIR doesn't exist — nothing to clean
   }
 
   // Clean old log files
   const logMaxAge = config.retention.log_days * 24 * 60 * 60 * 1000;
-  if (existsSync(LOGS_DIR)) {
+  try {
     const files = await readdir(LOGS_DIR);
     for (const file of files) {
       if (!file.endsWith('.log')) continue;
@@ -150,6 +154,8 @@ async function runRetentionCleanup(config: Config, logger: Logger): Promise<void
         // File may have been deleted by another process
       }
     }
+  } catch {
+    // LOGS_DIR doesn't exist — nothing to clean
   }
 
   if (deletedTranscripts > 0 || deletedLogs > 0) {
