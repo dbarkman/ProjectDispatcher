@@ -2,19 +2,37 @@ import type { FastifyInstance } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
 import { listProjects, getProject } from '../../db/queries/projects.js';
+import { listProjectTypes } from '../../db/queries/project-types.js';
+import { discoverProjects, folderDisplayName } from '../../daemon/discovery.js';
 import { getInboxCount } from './helpers.js';
+import type { Config } from '../../config.schema.js';
 
 const uuidParam = z.object({ id: z.string().uuid() });
 
-export async function projectUiRoutes(app: FastifyInstance, db: Database): Promise<void> {
-  // GET /ui/projects — projects list
+export async function projectUiRoutes(app: FastifyInstance, db: Database, config?: Config): Promise<void> {
+  // GET /ui/projects — projects list with register form
   app.get('/ui/projects', async (request, reply) => {
     const projects = listProjects(db);
+    const projectTypes = listProjectTypes(db);
+
+    // Get discovered-but-not-registered folders
+    let discovered: Array<{ path: string; name: string }> = [];
+    if (config) {
+      try {
+        const disc = await discoverProjects(db, config);
+        discovered = disc.discovered.map((p) => ({ path: p, name: folderDisplayName(p) }));
+      } catch {
+        // Discovery failure shouldn't break the page
+      }
+    }
+
     return reply.view('projects.hbs', {
       activePage: 'projects',
       pageTitle: 'Projects',
       breadcrumbs: [{ label: 'Projects', href: '/ui/projects' }],
       projects,
+      projectTypes,
+      discovered,
       inboxCount: getInboxCount(db) || undefined,
     });
   });

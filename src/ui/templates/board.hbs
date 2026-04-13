@@ -1,7 +1,66 @@
+<!-- Board actions -->
+<div class="flex gap-3 mb-6">
+  <!-- New Ticket -->
+  <button onclick="document.getElementById('new-ticket-form').classList.toggle('hidden')"
+    class="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">
+    + New Ticket
+  </button>
+
+  <!-- Wake -->
+  <form hx-post="/api/projects/{{project.id}}/wake" hx-ext="json-enc" hx-swap="none"
+        hx-on::after-request="if(event.detail.successful) { alert('Heartbeat reset — agents will check soon'); }">
+    <button type="submit"
+      class="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-gray-200 text-sm rounded-lg transition-colors">
+      Wake
+    </button>
+  </form>
+</div>
+
+<!-- New Ticket form (hidden by default) -->
+<div id="new-ticket-form" class="hidden mb-6 card">
+  <h3 class="text-sm font-semibold text-gray-400 mb-3">New Ticket</h3>
+  <form hx-post="/api/tickets" hx-ext="json-enc" hx-swap="none"
+        hx-on::after-request="if(event.detail.successful) location.reload()">
+    <input type="hidden" name="project_id" value="{{project.id}}">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Title</label>
+        <input name="title" required placeholder="What needs to be done?"
+          class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Priority</label>
+        <select name="priority"
+          class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+          <option value="normal">Normal</option>
+          <option value="low">Low</option>
+          <option value="high">High</option>
+          <option value="urgent">Urgent</option>
+        </select>
+      </div>
+    </div>
+    <div class="mt-3">
+      <label class="block text-xs text-gray-500 mb-1">Description (optional)</label>
+      <textarea name="body" rows="3" placeholder="Details, acceptance criteria, context..."
+        class="w-full bg-navy-900 border border-navy-700 rounded-lg p-3 text-sm text-gray-200 placeholder-gray-600 focus:border-accent focus:outline-none resize-y"></textarea>
+    </div>
+    <div class="mt-3 flex gap-2">
+      <button type="submit"
+        class="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">
+        Create Ticket
+      </button>
+      <button type="button" onclick="document.getElementById('new-ticket-form').classList.add('hidden')"
+        class="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-gray-300 text-sm rounded-lg transition-colors">
+        Cancel
+      </button>
+    </div>
+  </form>
+</div>
+
+<!-- Kanban board -->
 <div class="flex gap-4 overflow-x-auto pb-4" style="min-height: 400px;">
   {{#each columns}}
   <div class="flex-shrink-0 w-72">
-    <!-- Column header -->
     <div class="flex items-center justify-between mb-3 px-1">
       <h3 class="text-sm font-semibold
         {{#if this.isHuman}}text-gray-300{{/if}}
@@ -12,15 +71,11 @@
       </h3>
       <span class="text-xs text-gray-500">{{this.tickets.length}}</span>
     </div>
-
-    <!-- Column body -->
     <div class="space-y-2 min-h-[200px] rounded-lg p-2
       {{#if this.isHuman}}bg-navy-900/50{{/if}}
       {{#if this.isAgent}}bg-navy-800/30 border border-accent/10{{/if}}
       {{#if this.isDone}}bg-navy-900/30 border border-green-900/20{{/if}}
-    "
-      data-column="{{this.column_id}}"
-    >
+    " data-column="{{this.column_id}}">
       {{#each this.tickets}}
       <div class="card cursor-pointer hover:border-accent/30"
            onclick="window.location='/ui/tickets/{{this.id}}'">
