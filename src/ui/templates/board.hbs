@@ -1,12 +1,9 @@
 <!-- Board actions -->
 <div class="flex gap-3 mb-6">
-  <!-- New Ticket -->
   <button onclick="document.getElementById('new-ticket-form').classList.toggle('hidden')"
     class="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">
     + New Ticket
   </button>
-
-  <!-- Wake -->
   <form hx-post="/api/projects/{{project.id}}/wake" hx-ext="json-enc" hx-swap="none"
         hx-on::after-request="if(event.detail.successful) { alert('Heartbeat reset — agents will check soon'); }">
     <button type="submit"
@@ -14,6 +11,9 @@
       Wake
     </button>
   </form>
+  <a href="/ui/settings" class="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-gray-200 text-sm rounded-lg transition-colors inline-flex items-center">
+    Settings
+  </a>
 </div>
 
 <!-- New Ticket form (hidden by default) -->
@@ -45,17 +45,59 @@
         class="w-full bg-navy-900 border border-navy-700 rounded-lg p-3 text-sm text-gray-200 placeholder-gray-600 focus:border-accent focus:outline-none resize-y"></textarea>
     </div>
     <div class="mt-3 flex gap-2">
-      <button type="submit"
-        class="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">
-        Create Ticket
-      </button>
-      <button type="button" onclick="document.getElementById('new-ticket-form').classList.add('hidden')"
-        class="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-gray-300 text-sm rounded-lg transition-colors">
-        Cancel
-      </button>
+      <button type="submit" class="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">Create Ticket</button>
+      <button type="button" onclick="document.getElementById('new-ticket-form').classList.add('hidden')" class="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-gray-300 text-sm rounded-lg transition-colors">Cancel</button>
     </div>
   </form>
 </div>
+
+<!-- Drag-and-drop script (Gap fix #4) -->
+<script>
+  let draggedTicketId = null;
+
+  function onDragStart(e, ticketId) {
+    draggedTicketId = ticketId;
+    e.dataTransfer.effectAllowed = 'move';
+    e.target.style.opacity = '0.5';
+  }
+
+  function onDragEnd(e) {
+    e.target.style.opacity = '1';
+    draggedTicketId = null;
+  }
+
+  function onDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    e.currentTarget.classList.add('ring-2', 'ring-accent/30');
+  }
+
+  function onDragLeave(e) {
+    e.currentTarget.classList.remove('ring-2', 'ring-accent/30');
+  }
+
+  async function onDrop(e, columnId) {
+    e.preventDefault();
+    e.currentTarget.classList.remove('ring-2', 'ring-accent/30');
+    if (!draggedTicketId) return;
+
+    try {
+      const res = await fetch(`/api/tickets/${draggedTicketId}/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ to_column: columnId, author: 'human' }),
+      });
+      if (res.ok) {
+        location.reload();
+      } else {
+        const err = await res.json();
+        alert(`Move failed: ${err.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert('Move failed: network error');
+    }
+  }
+</script>
 
 <!-- Kanban board -->
 <div class="flex gap-4 overflow-x-auto pb-4" style="min-height: 400px;">
@@ -71,14 +113,22 @@
       </h3>
       <span class="text-xs text-gray-500">{{this.tickets.length}}</span>
     </div>
-    <div class="space-y-2 min-h-[200px] rounded-lg p-2
+    <div class="space-y-2 min-h-[200px] rounded-lg p-2 transition-all
       {{#if this.isHuman}}bg-navy-900/50{{/if}}
       {{#if this.isAgent}}bg-navy-800/30 border border-accent/10{{/if}}
       {{#if this.isDone}}bg-navy-900/30 border border-green-900/20{{/if}}
-    " data-column="{{this.column_id}}">
+    "
+      data-column="{{this.column_id}}"
+      ondragover="onDragOver(event)"
+      ondragleave="onDragLeave(event)"
+      ondrop="onDrop(event, '{{this.column_id}}')"
+    >
       {{#each this.tickets}}
-      <div class="card cursor-pointer hover:border-accent/30"
-           onclick="window.location='/ui/tickets/{{this.id}}'">
+      <div class="card cursor-grab hover:border-accent/30 active:cursor-grabbing"
+           draggable="true"
+           ondragstart="onDragStart(event, '{{this.id}}')"
+           ondragend="onDragEnd(event)"
+           onclick="if(!window.getSelection().toString()) window.location='/ui/tickets/{{this.id}}'">
         <div class="flex items-start justify-between gap-2">
           <p class="text-sm text-gray-200 leading-snug">{{this.title}}</p>
           <span class="priority-dot priority-{{this.priority}} shrink-0 mt-1"></span>
