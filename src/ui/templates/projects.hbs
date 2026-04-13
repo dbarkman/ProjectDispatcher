@@ -34,7 +34,7 @@
         <label class="block text-xs text-gray-500 mb-1">Project Type</label>
         <select name="project_type_id" required
           class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
-          {{#each ../projectTypes}}
+          {{#each projectTypes}}
           <option value="{{this.id}}">{{this.name}}</option>
           {{/each}}
         </select>
