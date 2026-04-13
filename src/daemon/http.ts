@@ -10,6 +10,7 @@ import { projectTypeRoutes } from './routes/project-types.js';
 import { agentTypeRoutes } from './routes/agent-types.js';
 import { ticketRoutes } from './routes/tickets.js';
 import { configRoutes } from './routes/config.js';
+import { agentRunRoutes } from './routes/agent-runs.js';
 import { discoveryRoutes } from './routes/discovery.js';
 import { setupUi } from '../ui/routes/setup.js';
 
@@ -98,6 +99,7 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
   await projectTypeRoutes(app, db);
   await agentTypeRoutes(app, db);
   await ticketRoutes(app, db, scheduler);
+  await agentRunRoutes(app, db);
   await configRoutes(app, () => config, (c: Config) => { config = c; });
   await discoveryRoutes(app, db, config);
 
