@@ -314,7 +314,7 @@ describe('Attachments API', () => {
     expect(file.rawPayload.length).toBe(TINY_PNG.length);
   });
 
-  it('deletes an attachment', async () => {
+  it('deletes an attachment and removes file from disk', async () => {
     const { body, contentType } = multipartPayload('del.png', 'image/png', TINY_PNG);
     const upload = await app.inject({
       method: 'POST',
@@ -322,24 +322,44 @@ describe('Attachments API', () => {
       headers: { 'content-type': contentType },
       payload: body,
     });
-    const id = upload.json().id;
+    const att = upload.json();
+
+    // Verify file exists on disk before delete
+    const filePath = join(ATTACHMENTS_BASE, ticketId, att.stored_name);
+    expect(existsSync(filePath)).toBe(true);
 
     const del = await app.inject({
       method: 'DELETE',
-      url: `/api/attachments/${id}`,
+      url: `/api/attachments/${att.id}`,
     });
     expect(del.statusCode).toBe(200);
 
-    // Verify it's gone
+    // Verify DB record is gone
     const list = await app.inject({
       method: 'GET',
       url: `/api/tickets/${ticketId}/attachments`,
     });
     expect(list.json()).toHaveLength(0);
+
+    // Verify file is gone from disk
+    expect(existsSync(filePath)).toBe(false);
   });
 
   it('rejects upload with disallowed MIME type', async () => {
     const { body, contentType } = multipartPayload('evil.exe', 'application/octet-stream', Buffer.from('bad'));
+    const upload = await app.inject({
+      method: 'POST',
+      url: `/api/tickets/${ticketId}/attachments`,
+      headers: { 'content-type': contentType },
+      payload: body,
+    });
+    expect(upload.statusCode).toBe(400);
+    expect(upload.json().error).toMatch(/Unsupported file type/);
+  });
+
+  it('rejects SVG uploads', async () => {
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><circle r="1"/></svg>');
+    const { body, contentType } = multipartPayload('evil.svg', 'image/svg+xml', svg);
     const upload = await app.inject({
       method: 'POST',
       url: `/api/tickets/${ticketId}/attachments`,

@@ -3,7 +3,7 @@ import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
-import { mkdir, writeFile, stat } from 'node:fs/promises';
+import { mkdir, writeFile, stat, unlink } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { idParam } from '../schemas.js';
@@ -29,7 +29,6 @@ const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
   'image/gif',
   'image/webp',
-  'image/svg+xml',
 ]);
 
 /** Maximum file size: 10 MB. */
@@ -66,18 +65,23 @@ export async function attachmentRoutes(app: FastifyInstance, db: Database): Prom
         });
       }
 
-      // Read file content into buffer (respecting size limit)
+      // Read file content into buffer.
+      // @fastify/multipart enforces the size limit via busboy — if the file
+      // exceeds limits.fileSize, the stream is truncated silently and
+      // file.file.truncated becomes true. We check that flag after consuming
+      // the stream rather than tracking size manually (which would never fire
+      // because busboy cuts the stream first).
       const chunks: Buffer[] = [];
-      let totalSize = 0;
       for await (const chunk of file.file) {
-        totalSize += chunk.length;
-        if (totalSize > MAX_FILE_SIZE) {
-          return reply
-            .status(400)
-            .send({ error: `File too large. Maximum size: ${MAX_FILE_SIZE / 1024 / 1024} MB` });
-        }
         chunks.push(chunk);
       }
+
+      if (file.file.truncated) {
+        return reply
+          .status(400)
+          .send({ error: `File too large. Maximum size: ${MAX_FILE_SIZE / 1024 / 1024} MB` });
+      }
+
       const buffer = Buffer.concat(chunks);
 
       // Generate a UUID-based stored name to prevent collisions and path traversal
@@ -142,7 +146,7 @@ export async function attachmentRoutes(app: FastifyInstance, db: Database): Prom
     const stream = createReadStream(filePath);
     return reply
       .header('Content-Type', attachment.mime_type)
-      .header('Content-Disposition', `inline; filename="${attachment.filename}"`)
+      .header('Content-Disposition', `inline; filename="${attachment.filename.replace(/"/g, '\\"')}"`)
       .header('Cache-Control', 'private, max-age=86400')
       .send(stream);
   });
@@ -156,8 +160,14 @@ export async function attachmentRoutes(app: FastifyInstance, db: Database): Prom
       return reply.status(404).send({ error: 'Attachment not found' });
     }
 
-    // Remove from DB (file on disk is left as orphan — cheap, no risk,
-    // retention cleanup can sweep later if needed)
+    // Remove file from disk, then from DB
+    const filePath = join(ATTACHMENTS_DIR, attachment.ticket_id, attachment.stored_name);
+    try {
+      await unlink(filePath);
+    } catch {
+      // File may already be missing — not an error worth blocking the delete for
+    }
+
     deleteAttachment(db, id);
 
     return { status: 'deleted' };
@@ -177,8 +187,6 @@ function extFromMime(mime: string): string {
       return '.gif';
     case 'image/webp':
       return '.webp';
-    case 'image/svg+xml':
-      return '.svg';
     default:
       return '';
   }
