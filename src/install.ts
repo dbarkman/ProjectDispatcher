@@ -100,8 +100,8 @@ async function main(): Promise<void> {
   // 5. Config
   console.log(chalk.cyan('\nWriting config...'));
 
+  const defaultConfig = configSchema.parse({}) as Record<string, unknown>;
   if (!existsSync(CONFIG_PATH)) {
-    const defaultConfig = configSchema.parse({});
     await writeFile(CONFIG_PATH, JSON.stringify(defaultConfig, null, 2) + '\n', 'utf8');
     console.log(chalk.green(`  Default config written to ${CONFIG_PATH}`));
   } else {
@@ -142,18 +142,77 @@ async function main(): Promise<void> {
     console.log(chalk.dim('  Start the daemon manually with: npm run dev'));
   }
 
-  // 7. Success
+  // 7. Wait for daemon health (Gap fix #15)
+  console.log(chalk.cyan('\nWaiting for daemon to become healthy...'));
+
+  let healthy = false;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    try {
+      const res = await fetch(`http://127.0.0.1:${5757}/api/health`);
+      if (res.ok) {
+        healthy = true;
+        console.log(chalk.green('  Daemon is healthy!'));
+        break;
+      }
+    } catch {
+      process.stdout.write(chalk.dim('.'));
+    }
+  }
+  if (!healthy) {
+    console.log(chalk.yellow('\n  Daemon did not become healthy within 20 seconds.'));
+    console.log(chalk.dim('  Start manually with: npm run dev'));
+  }
+
+  // 8. Open browser (Gap fix #16)
+  if (healthy) {
+    console.log(chalk.cyan('\nOpening the UI in your browser...'));
+    const url = `http://127.0.0.1:${5757}`;
+    try {
+      const os = (await import('node:os')).platform();
+      const { execFile: execF } = await import('node:child_process');
+      const { promisify: prom } = await import('node:util');
+      const execFA = prom(execF);
+      if (os === 'darwin') await execFA('open', [url]);
+      else if (os === 'linux') await execFA('xdg-open', [url]);
+      else if (os === 'win32') await execFA('cmd', ['/c', 'start', url]);
+      console.log(chalk.green(`  Opened ${url}`));
+    } catch {
+      console.log(`  Open in your browser: ${chalk.cyan(url)}`);
+    }
+  }
+
+  // 9. Success
   console.log(chalk.bold.green('\n  Installation complete!\n'));
   console.log('  Next steps:');
-  console.log(`    1. Start the daemon:  ${chalk.cyan('npm run dev')}  (or the service starts automatically)`);
-  console.log(`    2. Open the UI:       ${chalk.cyan('http://127.0.0.1:5757')}`);
-  console.log(`    3. Discover projects: ${chalk.cyan('dispatch projects discover')}`);
-  console.log(`    4. Register a project: ${chalk.cyan('dispatch projects register <path> --type software-dev')}`);
-  console.log(`    5. Create a ticket:   ${chalk.cyan('dispatch ticket new --project <id> --title "..."')}`);
+  if (!healthy) {
+    console.log(`    1. Start the daemon:  ${chalk.cyan('npm run dev')}`);
+    console.log(`    2. Open the UI:       ${chalk.cyan('http://127.0.0.1:5757')}`);
+  }
+  console.log(`    ${healthy ? '1' : '3'}. Discover projects: ${chalk.cyan('dispatch projects discover')}`);
+  console.log(`    ${healthy ? '2' : '4'}. Register a project: ${chalk.cyan('dispatch projects register <path> --type software-dev')}`);
+  console.log(`    ${healthy ? '3' : '5'}. Create a ticket:   ${chalk.cyan('dispatch ticket new')}`);
   console.log('');
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error(chalk.red(`\nInstallation failed: ${err instanceof Error ? err.message : String(err)}`));
+
+  // Rollback: attempt to remove the service and .tasks/ if we created them (Gap fix #17)
+  console.error(chalk.dim('Attempting rollback...'));
+  try {
+    const platform = detectPlatform();
+    if (platform === 'macos') {
+      const { uninstallService } = await import('./platform/macos.js');
+      await uninstallService();
+    } else if (platform === 'linux') {
+      const { uninstallService } = await import('./platform/linux.js');
+      await uninstallService();
+    }
+  } catch {
+    // Best-effort
+  }
+  console.error(chalk.dim(`Data directory preserved at: ${DEFAULT_TASKS_DIR}`));
+  console.error(chalk.dim('Delete it manually if you want a clean slate: rm -rf ~/Development/.tasks'));
   process.exit(1);
 });
