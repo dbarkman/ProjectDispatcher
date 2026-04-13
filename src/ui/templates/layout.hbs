@@ -40,12 +40,17 @@
 </head>
 <body class="dark h-full bg-navy-950 text-gray-200">
   <div class="flex h-full">
-    <!-- Sidebar -->
-    <aside class="w-56 bg-navy-900 border-r border-navy-700 flex flex-col shrink-0">
-      <!-- Logo -->
-      <div class="px-4 py-4 border-b border-navy-700">
-        <h1 class="text-lg font-bold text-white tracking-tight">Dispatch</h1>
-        <p class="text-xs text-gray-400">Project Dispatcher</p>
+    <!-- Sidebar (Gap fix #7 — collapsible) -->
+    <aside id="sidebar" class="w-56 bg-navy-900 border-r border-navy-700 flex flex-col shrink-0 transition-all duration-200">
+      <!-- Logo + collapse toggle -->
+      <div class="px-4 py-4 border-b border-navy-700 flex items-center justify-between">
+        <div class="sidebar-expanded">
+          <h1 class="text-lg font-bold text-white tracking-tight">Dispatch</h1>
+          <p class="text-xs text-gray-400">Project Dispatcher</p>
+        </div>
+        <button onclick="toggleSidebar()" class="text-gray-500 hover:text-gray-300 text-sm" title="Toggle sidebar">
+          <span id="collapse-icon">&#9664;</span>
+        </button>
       </div>
 
       <!-- Navigation -->
@@ -55,7 +60,7 @@
             <a href="/"
                class="nav-link {{#if (eq activePage 'inbox')}}nav-link-active{{/if}}">
               <span class="nav-icon">&#9993;</span>
-              Inbox
+              <span class="nav-label">Inbox</span>
               {{#if inboxCount}}<span class="ml-auto bg-accent text-white text-xs px-1.5 py-0.5 rounded-full">{{inboxCount}}</span>{{/if}}
             </a>
           </li>
@@ -63,21 +68,21 @@
             <a href="/ui/projects"
                class="nav-link {{#if (eq activePage 'projects')}}nav-link-active{{/if}}">
               <span class="nav-icon">&#128193;</span>
-              Projects
+              <span class="nav-label">Projects</span>
             </a>
           </li>
           <li>
             <a href="/ui/agent-types"
                class="nav-link {{#if (eq activePage 'agent-types')}}nav-link-active{{/if}}">
               <span class="nav-icon">&#129302;</span>
-              Agent Types
+              <span class="nav-label">Agent Types</span>
             </a>
           </li>
           <li>
             <a href="/ui/settings"
                class="nav-link {{#if (eq activePage 'settings')}}nav-link-active{{/if}}">
               <span class="nav-icon">&#9881;</span>
-              Settings
+              <span class="nav-label">Settings</span>
             </a>
           </li>
         </ul>
@@ -122,5 +127,30 @@
       </div>
     </main>
   </div>
+  <!-- Sidebar collapse script (Gap fix #7) -->
+  <script>
+    function toggleSidebar() {
+      const sidebar = document.getElementById('sidebar');
+      const icon = document.getElementById('collapse-icon');
+      const expanded = document.querySelectorAll('.sidebar-expanded');
+      const labels = document.querySelectorAll('.nav-label');
+
+      if (sidebar.classList.contains('w-56')) {
+        // Collapse
+        sidebar.classList.remove('w-56');
+        sidebar.classList.add('w-16');
+        icon.innerHTML = '&#9654;'; // right arrow
+        expanded.forEach(el => el.style.display = 'none');
+        labels.forEach(el => el.style.display = 'none');
+      } else {
+        // Expand
+        sidebar.classList.remove('w-16');
+        sidebar.classList.add('w-56');
+        icon.innerHTML = '&#9664;'; // left arrow
+        expanded.forEach(el => el.style.display = '');
+        labels.forEach(el => el.style.display = '');
+      }
+    }
+  </script>
 </body>
 </html>
