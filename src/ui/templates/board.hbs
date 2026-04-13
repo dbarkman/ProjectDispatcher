@@ -23,8 +23,7 @@
 <!-- New Ticket form (hidden by default) -->
 <div id="new-ticket-form" class="hidden mb-6 card">
   <h3 class="text-sm font-semibold text-gray-400 mb-3">New Ticket</h3>
-  <form hx-post="/api/tickets" hx-ext="json-enc" hx-swap="none"
-        hx-on::after-request="if(event.detail.successful) location.reload()">
+  <form id="create-ticket-form" onsubmit="return submitTicketForm(event)">
     <input type="hidden" name="project_id" value="{{project.id}}">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
       <div>
@@ -48,12 +47,135 @@
       <textarea name="body" rows="3" placeholder="Details, acceptance criteria, context..."
         class="w-full bg-navy-900 border border-navy-700 rounded-lg p-3 text-sm text-gray-200 placeholder-gray-600 focus:border-accent focus:outline-none resize-y"></textarea>
     </div>
+    <div class="mt-3">
+      <label class="block text-xs text-gray-500 mb-1">Screenshots (optional)</label>
+      <div id="screenshot-drop-zone"
+        class="border-2 border-dashed border-navy-700 rounded-lg p-4 text-center cursor-pointer hover:border-accent/50 transition-colors"
+        onclick="document.getElementById('screenshot-input').click()">
+        <p class="text-sm text-gray-500">Click to select or drag & drop images here</p>
+        <p class="text-xs text-gray-600 mt-1">PNG, JPEG, GIF, WebP. Max 10 MB each.</p>
+      </div>
+      <input type="file" id="screenshot-input" accept="image/*" multiple class="hidden"
+        onchange="handleFileSelect(this.files)">
+      <div id="screenshot-previews" class="flex flex-wrap gap-2 mt-2"></div>
+    </div>
     <div class="mt-3 flex gap-2">
-      <button type="submit" class="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">Create Ticket</button>
+      <button type="submit" id="create-ticket-btn" class="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">Create Ticket</button>
       <button type="button" onclick="document.getElementById('new-ticket-form').classList.add('hidden')" class="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-gray-300 text-sm rounded-lg transition-colors">Cancel</button>
     </div>
   </form>
 </div>
+<script>
+  const pendingFiles = [];
+
+  function handleFileSelect(files) {
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) continue;
+      if (file.size > 10 * 1024 * 1024) {
+        alert(file.name + ' is too large (max 10 MB)');
+        continue;
+      }
+      pendingFiles.push(file);
+      addPreview(file, pendingFiles.length - 1);
+    }
+    // Reset the input so re-selecting the same file works
+    document.getElementById('screenshot-input').value = '';
+  }
+
+  function addPreview(file, index) {
+    const container = document.getElementById('screenshot-previews');
+    const wrapper = document.createElement('div');
+    wrapper.className = 'relative group';
+    wrapper.dataset.index = index;
+
+    const img = document.createElement('img');
+    img.className = 'h-16 w-16 object-cover rounded border border-navy-700';
+    const url = URL.createObjectURL(file);
+    img.src = url;
+    img.onload = function() { URL.revokeObjectURL(url); };
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'absolute -top-1 -right-1 bg-red-600 text-white rounded-full w-4 h-4 text-xs leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity';
+    removeBtn.textContent = '\u00d7';
+    removeBtn.onclick = function(e) {
+      e.stopPropagation();
+      pendingFiles[index] = null;
+      wrapper.remove();
+    };
+
+    wrapper.appendChild(img);
+    wrapper.appendChild(removeBtn);
+    container.appendChild(wrapper);
+  }
+
+  // Drag and drop on the drop zone
+  const dropZone = document.getElementById('screenshot-drop-zone');
+  dropZone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    dropZone.classList.add('border-accent/50');
+  });
+  dropZone.addEventListener('dragleave', function() {
+    dropZone.classList.remove('border-accent/50');
+  });
+  dropZone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    dropZone.classList.remove('border-accent/50');
+    if (e.dataTransfer.files.length) handleFileSelect(e.dataTransfer.files);
+  });
+
+  async function submitTicketForm(e) {
+    e.preventDefault();
+    const form = document.getElementById('create-ticket-form');
+    const btn = document.getElementById('create-ticket-btn');
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+
+    try {
+      // Step 1: Create the ticket via JSON
+      const formData = new FormData(form);
+      const ticketData = {
+        project_id: formData.get('project_id'),
+        title: formData.get('title'),
+        body: formData.get('body') || undefined,
+        priority: formData.get('priority'),
+      };
+
+      const res = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ticketData),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        alert('Failed to create ticket: ' + (err.error || 'Unknown error'));
+        return false;
+      }
+
+      const ticket = await res.json();
+
+      // Step 2: Upload any pending screenshots
+      const filesToUpload = pendingFiles.filter(function(f) { return f !== null; });
+      for (const file of filesToUpload) {
+        const uploadData = new FormData();
+        uploadData.append('file', file);
+        await fetch('/api/tickets/' + ticket.id + '/attachments', {
+          method: 'POST',
+          body: uploadData,
+        });
+      }
+
+      location.reload();
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Create Ticket';
+    }
+    return false;
+  }
+</script>
 
 <!-- Drag-and-drop script (Gap fix #4) -->
 <script>

@@ -120,6 +120,86 @@
   }
 </script>
 
+<!-- Attachments -->
+{{#if attachments.length}}
+<div class="mb-6">
+  <h3 class="text-sm font-semibold text-gray-400 mb-3">Attachments</h3>
+  <div class="flex flex-wrap gap-3">
+    {{#each attachments}}
+    <div class="relative group">
+      {{#if this.isImage}}
+      <a href="/api/attachments/{{this.id}}/file" target="_blank">
+        <img src="/api/attachments/{{this.id}}/file" alt="{{this.filename}}"
+          class="h-24 w-24 object-cover rounded-lg border border-navy-700 hover:border-accent/50 transition-colors cursor-pointer">
+      </a>
+      {{else}}
+      <a href="/api/attachments/{{this.id}}/file" target="_blank"
+        class="flex items-center gap-2 px-3 py-2 bg-navy-900 border border-navy-700 rounded-lg hover:border-accent/50 transition-colors">
+        <span class="text-sm text-gray-300">{{this.filename}}</span>
+        <span class="text-xs text-gray-500">{{this.sizeStr}}</span>
+      </a>
+      {{/if}}
+      <button onclick="deleteAttachment('{{this.id}}')"
+        class="absolute -top-1 -right-1 bg-red-600 text-white rounded-full w-5 h-5 text-xs leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+        title="Remove attachment">&times;</button>
+    </div>
+    {{/each}}
+  </div>
+</div>
+{{/if}}
+
+<!-- Add attachment -->
+<div class="mb-6">
+  <div id="attachment-drop-zone"
+    class="border-2 border-dashed border-navy-700 rounded-lg p-3 text-center cursor-pointer hover:border-accent/50 transition-colors"
+    onclick="document.getElementById('attachment-input').click()">
+    <p class="text-xs text-gray-500">Click or drag & drop to add screenshots</p>
+  </div>
+  <input type="file" id="attachment-input" accept="image/*" multiple class="hidden"
+    onchange="uploadAttachments(this.files)">
+</div>
+<script>
+  const attachDropZone = document.getElementById('attachment-drop-zone');
+  attachDropZone.addEventListener('dragover', function(e) {
+    e.preventDefault();
+    attachDropZone.classList.add('border-accent/50');
+  });
+  attachDropZone.addEventListener('dragleave', function() {
+    attachDropZone.classList.remove('border-accent/50');
+  });
+  attachDropZone.addEventListener('drop', function(e) {
+    e.preventDefault();
+    attachDropZone.classList.remove('border-accent/50');
+    if (e.dataTransfer.files.length) uploadAttachments(e.dataTransfer.files);
+  });
+
+  async function uploadAttachments(files) {
+    for (const file of files) {
+      if (!file.type.startsWith('image/')) { alert(file.name + ' is not an image'); continue; }
+      if (file.size > 10 * 1024 * 1024) { alert(file.name + ' is too large (max 10 MB)'); continue; }
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch('/api/tickets/{{ticket.id}}/attachments', {
+        method: 'POST',
+        body: formData,
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        alert('Upload failed: ' + (err.error || 'Unknown error'));
+      }
+    }
+    document.getElementById('attachment-input').value = '';
+    location.reload();
+  }
+
+  async function deleteAttachment(id) {
+    if (!confirm('Remove this attachment?')) return;
+    const res = await fetch('/api/attachments/' + id, { method: 'DELETE' });
+    if (res.ok) location.reload();
+    else alert('Delete failed');
+  }
+</script>
+
 <!-- Comment thread -->
 <div class="space-y-4 mb-8">
   {{#each comments}}

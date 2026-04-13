@@ -11,8 +11,8 @@ import { loadConfig } from '../../src/config.js';
 import { createLogger } from '../../src/logger.js';
 import { createHttpServer } from '../../src/daemon/http.js';
 import type { Database } from 'better-sqlite3';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 
 let app: FastifyInstance;
@@ -217,5 +217,155 @@ describe('Agent Types API', () => {
     const res = await app.inject({ method: 'GET', url: '/api/agent-types' });
     expect(res.statusCode).toBe(200);
     expect(res.json().length).toBe(9);
+  });
+});
+
+describe('Attachments API', () => {
+  let projectId: string;
+  let ticketId: string;
+  const ATTACHMENTS_BASE = join(homedir(), 'Development', '.tasks', 'artifacts', 'attachments');
+
+  // Minimal 1x1 red PNG (68 bytes)
+  const TINY_PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAH' +
+      'ggJ/PchI7wAAAABJRU5ErkJggg==',
+    'base64',
+  );
+
+  function multipartPayload(
+    filename: string,
+    contentType: string,
+    content: Buffer,
+  ): { body: Buffer; contentType: string } {
+    const boundary = '----TestBoundary' + Date.now();
+    const header =
+      `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+      `Content-Type: ${contentType}\r\n\r\n`;
+    const footer = `\r\n--${boundary}--\r\n`;
+    const body = Buffer.concat([Buffer.from(header), content, Buffer.from(footer)]);
+    return { body, contentType: `multipart/form-data; boundary=${boundary}` };
+  }
+
+  beforeEach(async () => {
+    const proj = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'AttachProj', path: '/attach-test', project_type_id: 'software-dev' },
+    });
+    projectId = proj.json().id;
+
+    const ticket = await app.inject({
+      method: 'POST',
+      url: '/api/tickets',
+      payload: { project_id: projectId, title: 'Attach ticket' },
+    });
+    ticketId = ticket.json().id;
+  });
+
+  afterEach(() => {
+    // Clean up attachment files written to disk by test uploads
+    const ticketDir = join(ATTACHMENTS_BASE, ticketId);
+    if (existsSync(ticketDir)) {
+      rmSync(ticketDir, { recursive: true, force: true });
+    }
+  });
+
+  it('uploads an image and lists it', async () => {
+    const { body, contentType } = multipartPayload('test.png', 'image/png', TINY_PNG);
+    const upload = await app.inject({
+      method: 'POST',
+      url: `/api/tickets/${ticketId}/attachments`,
+      headers: { 'content-type': contentType },
+      payload: body,
+    });
+    expect(upload.statusCode).toBe(201);
+    const attachment = upload.json();
+    expect(attachment.filename).toBe('test.png');
+    expect(attachment.mime_type).toBe('image/png');
+    expect(attachment.size_bytes).toBe(TINY_PNG.length);
+
+    // List
+    const list = await app.inject({
+      method: 'GET',
+      url: `/api/tickets/${ticketId}/attachments`,
+    });
+    expect(list.statusCode).toBe(200);
+    expect(list.json()).toHaveLength(1);
+    expect(list.json()[0].id).toBe(attachment.id);
+  });
+
+  it('serves an uploaded file', async () => {
+    const { body, contentType } = multipartPayload('serve.png', 'image/png', TINY_PNG);
+    const upload = await app.inject({
+      method: 'POST',
+      url: `/api/tickets/${ticketId}/attachments`,
+      headers: { 'content-type': contentType },
+      payload: body,
+    });
+    const id = upload.json().id;
+
+    const file = await app.inject({
+      method: 'GET',
+      url: `/api/attachments/${id}/file`,
+    });
+    expect(file.statusCode).toBe(200);
+    expect(file.headers['content-type']).toBe('image/png');
+    expect(file.rawPayload.length).toBe(TINY_PNG.length);
+  });
+
+  it('deletes an attachment', async () => {
+    const { body, contentType } = multipartPayload('del.png', 'image/png', TINY_PNG);
+    const upload = await app.inject({
+      method: 'POST',
+      url: `/api/tickets/${ticketId}/attachments`,
+      headers: { 'content-type': contentType },
+      payload: body,
+    });
+    const id = upload.json().id;
+
+    const del = await app.inject({
+      method: 'DELETE',
+      url: `/api/attachments/${id}`,
+    });
+    expect(del.statusCode).toBe(200);
+
+    // Verify it's gone
+    const list = await app.inject({
+      method: 'GET',
+      url: `/api/tickets/${ticketId}/attachments`,
+    });
+    expect(list.json()).toHaveLength(0);
+  });
+
+  it('rejects upload with disallowed MIME type', async () => {
+    const { body, contentType } = multipartPayload('evil.exe', 'application/octet-stream', Buffer.from('bad'));
+    const upload = await app.inject({
+      method: 'POST',
+      url: `/api/tickets/${ticketId}/attachments`,
+      headers: { 'content-type': contentType },
+      payload: body,
+    });
+    expect(upload.statusCode).toBe(400);
+    expect(upload.json().error).toMatch(/Unsupported file type/);
+  });
+
+  it('returns 404 for upload to nonexistent ticket', async () => {
+    const { body, contentType } = multipartPayload('lost.png', 'image/png', TINY_PNG);
+    const upload = await app.inject({
+      method: 'POST',
+      url: '/api/tickets/00000000-0000-0000-0000-000000000000/attachments',
+      headers: { 'content-type': contentType },
+      payload: body,
+    });
+    expect(upload.statusCode).toBe(404);
+  });
+
+  it('returns 404 for nonexistent attachment file', async () => {
+    const file = await app.inject({
+      method: 'GET',
+      url: '/api/attachments/00000000-0000-0000-0000-000000000000/file',
+    });
+    expect(file.statusCode).toBe(404);
   });
 });

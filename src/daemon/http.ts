@@ -1,5 +1,6 @@
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import { z } from 'zod';
 import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
@@ -9,6 +10,7 @@ import { projectRoutes } from './routes/projects.js';
 import { projectTypeRoutes } from './routes/project-types.js';
 import { agentTypeRoutes } from './routes/agent-types.js';
 import { ticketRoutes } from './routes/tickets.js';
+import { attachmentRoutes } from './routes/attachments.js';
 import { configRoutes } from './routes/config.js';
 import { agentRunRoutes } from './routes/agent-runs.js';
 import { discoveryRoutes } from './routes/discovery.js';
@@ -47,6 +49,14 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
     // because Pino Logger is a superset of FastifyBaseLogger — the type
     // mismatch is a known Fastify 5 / Pino generics interop issue.
     loggerInstance: logger as FastifyBaseLogger,
+  });
+
+  // Multipart support for file uploads (attachments).
+  await app.register(multipart, {
+    limits: {
+      fileSize: 10 * 1024 * 1024, // 10 MB
+      files: 1,                    // one file per request
+    },
   });
 
   // CORS: allow localhost on any port (for dev), reject everything else.
@@ -99,6 +109,7 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
   await projectTypeRoutes(app, db);
   await agentTypeRoutes(app, db);
   await ticketRoutes(app, db, scheduler);
+  await attachmentRoutes(app, db);
   await agentRunRoutes(app, db);
   await configRoutes(app, () => config, (c: Config) => { config = c; });
   await discoveryRoutes(app, db, config);

@@ -32,6 +32,12 @@ import {
   moveTicket,
   addComment,
 } from '../../../src/db/queries/tickets.js';
+import {
+  createAttachment,
+  listAttachments,
+  getAttachment,
+  deleteAttachment,
+} from '../../../src/db/queries/attachments.js';
 
 let db: Database;
 
@@ -193,5 +199,108 @@ describe('tickets queries', () => {
     // Heartbeat should have been reset to near-immediate
     expect(after!.next_check_at).toBeLessThanOrEqual(Date.now() + 10000);
     expect(after!.consecutive_empty_checks).toBe(0);
+  });
+});
+
+// --- Attachments ---
+
+describe('attachments queries', () => {
+  let projectId: string;
+  let ticketId: string;
+
+  beforeEach(() => {
+    const p = createProject(db, { name: 'AP', path: '/ap', projectTypeId: 'software-dev' });
+    projectId = p.id;
+    const t = createTicket(db, { projectId, title: 'Attachment test' });
+    ticketId = t.id;
+  });
+
+  it('creates an attachment and returns it', () => {
+    const a = createAttachment(db, {
+      ticketId,
+      filename: 'screenshot.png',
+      storedName: 'abc-123.png',
+      mimeType: 'image/png',
+      sizeBytes: 1024,
+    });
+    expect(a.id).toBeDefined();
+    expect(a.ticket_id).toBe(ticketId);
+    expect(a.filename).toBe('screenshot.png');
+    expect(a.stored_name).toBe('abc-123.png');
+    expect(a.mime_type).toBe('image/png');
+    expect(a.size_bytes).toBe(1024);
+    expect(a.created_at).toBeGreaterThan(0);
+  });
+
+  it('lists attachments for a ticket in creation order', () => {
+    createAttachment(db, {
+      ticketId,
+      filename: 'first.png',
+      storedName: 'a.png',
+      mimeType: 'image/png',
+      sizeBytes: 100,
+    });
+    createAttachment(db, {
+      ticketId,
+      filename: 'second.jpg',
+      storedName: 'b.jpg',
+      mimeType: 'image/jpeg',
+      sizeBytes: 200,
+    });
+
+    const list = listAttachments(db, ticketId);
+    expect(list).toHaveLength(2);
+    expect(list[0]!.filename).toBe('first.png');
+    expect(list[1]!.filename).toBe('second.jpg');
+  });
+
+  it('returns empty array for ticket with no attachments', () => {
+    expect(listAttachments(db, ticketId)).toHaveLength(0);
+  });
+
+  it('gets a single attachment by id', () => {
+    const a = createAttachment(db, {
+      ticketId,
+      filename: 'get-me.png',
+      storedName: 'x.png',
+      mimeType: 'image/png',
+      sizeBytes: 50,
+    });
+    const fetched = getAttachment(db, a.id);
+    expect(fetched).not.toBeNull();
+    expect(fetched!.filename).toBe('get-me.png');
+  });
+
+  it('returns null for nonexistent attachment', () => {
+    expect(getAttachment(db, '00000000-0000-0000-0000-000000000000')).toBeNull();
+  });
+
+  it('deletes an attachment', () => {
+    const a = createAttachment(db, {
+      ticketId,
+      filename: 'delete-me.png',
+      storedName: 'del.png',
+      mimeType: 'image/png',
+      sizeBytes: 10,
+    });
+    expect(deleteAttachment(db, a.id)).toBe(true);
+    expect(getAttachment(db, a.id)).toBeNull();
+  });
+
+  it('delete returns false for nonexistent attachment', () => {
+    expect(deleteAttachment(db, '00000000-0000-0000-0000-000000000000')).toBe(false);
+  });
+
+  it('cascades delete when ticket is deleted', () => {
+    const a = createAttachment(db, {
+      ticketId,
+      filename: 'cascade.png',
+      storedName: 'c.png',
+      mimeType: 'image/png',
+      sizeBytes: 10,
+    });
+    deleteTicket(db, ticketId);
+    expect(getAttachment(db, a.id)).toBeNull();
+    expect(listAttachments(db, ticketId)).toHaveLength(0);
   });
 });

@@ -71,10 +71,10 @@ describe('runMigrations', () => {
       const first = runMigrations(db);
       const second = runMigrations(db);
 
-      expect(first.applied).toEqual(['001_init.sql']);
+      expect(first.applied).toEqual(['001_init.sql', '002_ticket_attachments.sql']);
       expect(first.skipped).toEqual([]);
       expect(second.applied).toEqual([]);
-      expect(second.skipped).toEqual(['001_init.sql']);
+      expect(second.skipped).toEqual(['001_init.sql', '002_ticket_attachments.sql']);
     } finally {
       db.close();
     }

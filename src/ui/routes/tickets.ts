@@ -3,6 +3,7 @@ import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
 import { getTicketWithComments } from '../../db/queries/tickets.js';
 import { listAgentRuns } from '../../db/queries/agent-runs.js';
+import { listAttachments } from '../../db/queries/attachments.js';
 import { getInboxCount } from './helpers.js';
 
 const uuidParam = z.object({ id: z.string().uuid() });
@@ -52,6 +53,13 @@ export async function ticketUiRoutes(app: FastifyInstance, db: Database): Promis
         : 'running',
     }));
 
+    // Get attachments for this ticket
+    const attachments = listAttachments(db, id).map((a) => ({
+      ...a,
+      sizeStr: formatFileSize(a.size_bytes),
+      isImage: a.mime_type.startsWith('image/'),
+    }));
+
     return reply.view('ticket.hbs', {
       activePage: 'inbox',
       pageTitle: ticket.title,
@@ -72,6 +80,7 @@ export async function ticketUiRoutes(app: FastifyInstance, db: Database): Promis
       prevColumn,
       nextColumn,
       agentRuns,
+      attachments,
       projectName: project?.name ?? 'Unknown',
     });
   });
@@ -92,4 +101,12 @@ function formatDuration(ms: number): string {
   if (mins < 60) return `${mins}m ${secs % 60}s`;
   const hours = Math.floor(mins / 60);
   return `${hours}h ${mins % 60}m`;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  const mb = kb / 1024;
+  return `${mb.toFixed(1)} MB`;
 }
