@@ -8,8 +8,12 @@
 //     killed when the daemon died)
 //   - tickets with claimed_by_run_id pointing at one of those dead runs
 //
-// Recovery: mark runs as 'crashed', release ticket claims, add a block
-// comment so the human sees the ticket in their inbox.
+// Recovery actions:
+//   1. Mark orphaned runs as 'crashed'
+//   2. Release ticket claims (scoped to the crashed run)
+//   3. Move the ticket to the 'human' column so it appears in the inbox
+//      (per DESIGN.md §11.7 — "the ticket is moved back to Human")
+//   4. Add a block comment explaining what happened
 //
 // This MUST run before the scheduler starts — otherwise the scheduler
 // might try to spawn an agent for a ticket that's still "claimed" by
@@ -22,6 +26,7 @@ import { randomUUID } from 'node:crypto';
 export interface RecoveryResult {
   orphanedRuns: number;
   releasedTickets: number;
+  movedToHuman: number;
 }
 
 /**
@@ -40,7 +45,7 @@ export function recoverFromCrash(db: Database, logger: Logger): RecoveryResult {
 
   if (orphanedRuns.length === 0) {
     childLogger.debug('No orphaned runs found — clean startup');
-    return { orphanedRuns: 0, releasedTickets: 0 };
+    return { orphanedRuns: 0, releasedTickets: 0, movedToHuman: 0 };
   }
 
   childLogger.warn(
@@ -50,6 +55,7 @@ export function recoverFromCrash(db: Database, logger: Logger): RecoveryResult {
 
   const now = Date.now();
   let releasedTickets = 0;
+  let movedToHuman = 0;
 
   const apply = db.transaction(() => {
     const updateRun = db.prepare(
@@ -64,48 +70,81 @@ export function recoverFromCrash(db: Database, logger: Logger): RecoveryResult {
        WHERE claimed_by_run_id = ?`,
     );
 
-    const addBlockComment = db.prepare(
+    const getTicketColumn = db.prepare(
+      'SELECT "column" FROM tickets WHERE id = ?',
+    );
+
+    const moveToHuman = db.prepare(
+      `UPDATE tickets SET "column" = 'human', updated_at = ? WHERE id = ?`,
+    );
+
+    const addComment = db.prepare(
       `INSERT INTO ticket_comments (id, ticket_id, type, author, body, meta, created_at)
-       VALUES (?, ?, 'block', ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
 
     for (const run of orphanedRuns) {
-      // Mark the run as crashed
+      // 1. Mark the run as crashed
       updateRun.run(
         now,
         'Daemon crashed or was killed during this run. The agent subprocess was terminated.',
         run.id,
       );
 
-      // Release the ticket claim
+      // 2. Release the ticket claim (scoped to this run's ID)
       const released = releaseTicket.run(now, run.id);
       if (released.changes > 0) {
         releasedTickets += released.changes;
+      }
 
-        // Add a block comment so the human sees it in the inbox
-        addBlockComment.run(
+      // 3. Move ticket to 'human' column if it's not already there.
+      // Per DESIGN.md §11.7: crashed tickets go back to Human so they
+      // surface in the inbox. Without this, the ticket stays in the agent
+      // column and the human never sees it. (Gap fix item #1)
+      const ticketRow = getTicketColumn.get(run.ticket_id) as
+        | { column: string }
+        | undefined;
+
+      if (ticketRow && ticketRow.column !== 'human') {
+        const fromColumn = ticketRow.column;
+        moveToHuman.run(now, run.ticket_id);
+        movedToHuman++;
+
+        // Record the move
+        addComment.run(
           randomUUID(),
           run.ticket_id,
-          'block',
-          `system:recovery`,
-          `Agent run ${run.id} (${run.agent_type_id}) was interrupted by a daemon crash. The ticket claim has been released. Please review and reassign.`,
-          JSON.stringify({
-            recovered_run_id: run.id,
-            agent_type: run.agent_type_id,
-            recovery_at: now,
-          }),
+          'move',
+          'system:recovery',
+          `Moved from '${fromColumn}' to 'human' by crash recovery`,
+          JSON.stringify({ from_column: fromColumn, to_column: 'human' }),
           now,
         );
       }
+
+      // 4. Add a block comment explaining what happened
+      addComment.run(
+        randomUUID(),
+        run.ticket_id,
+        'block',
+        'system:recovery',
+        `Agent run ${run.id} (${run.agent_type_id}) was interrupted by a daemon crash. The ticket has been moved to your inbox for review.`,
+        JSON.stringify({
+          recovered_run_id: run.id,
+          agent_type: run.agent_type_id,
+          recovery_at: now,
+        }),
+        now,
+      );
     }
   });
 
   apply();
 
   childLogger.info(
-    { orphanedRuns: orphanedRuns.length, releasedTickets },
+    { orphanedRuns: orphanedRuns.length, releasedTickets, movedToHuman },
     'Crash recovery complete',
   );
 
-  return { orphanedRuns: orphanedRuns.length, releasedTickets };
+  return { orphanedRuns: orphanedRuns.length, releasedTickets, movedToHuman };
 }
