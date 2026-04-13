@@ -19,8 +19,8 @@ export async function inboxRoutes(app: FastifyInstance, db: Database): Promise<v
         `SELECT t.id, t.project_id, t.title, t.priority, t.updated_at,
                 p.name AS project_name
          FROM tickets t
-         LEFT JOIN projects p ON p.id = t.project_id
-         WHERE t."column" = 'human'
+         JOIN projects p ON p.id = t.project_id
+         WHERE t."column" = 'human' AND p.status != 'archived'
          ORDER BY t.updated_at DESC`,
       )
       .all() as InboxTicketRow[];

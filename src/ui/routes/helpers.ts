@@ -6,7 +6,11 @@ import type { Database } from 'better-sqlite3';
  */
 export function getInboxCount(db: Database): number {
   const row = db
-    .prepare(`SELECT COUNT(*) AS n FROM tickets WHERE "column" = 'human'`)
+    .prepare(
+      `SELECT COUNT(*) AS n FROM tickets t
+       JOIN projects p ON p.id = t.project_id
+       WHERE t."column" = 'human' AND p.status != 'archived'`,
+    )
     .get() as { n: number };
   return row.n;
 }
