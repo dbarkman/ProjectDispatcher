@@ -18,7 +18,10 @@
 //   5. Exit 0
 
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { readdir, copyFile, mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import { loadConfig } from '../config.js';
 import { createLogger } from '../logger.js';
 import { openDatabase } from '../db/index.js';
@@ -54,7 +57,33 @@ async function main(): Promise<void> {
     logger.info(seed, 'Seed data inserted');
   }
 
-  // 4. Discover projects on disk
+  // 4. Ensure default prompt files exist in ~/.tasks/prompts/
+  //    Copies from the shipped defaults (src/prompts/defaults/ or
+  //    dist/prompts/defaults/) if the target doesn't already exist.
+  //    Preserves user edits — never overwrites existing files.
+  const promptsSrc = resolve(join(dirname(fileURLToPath(import.meta.url)), '..', 'prompts', 'defaults'));
+  const promptsDest = join(TASKS_DIR, 'prompts');
+  try {
+    await mkdir(promptsDest, { recursive: true });
+    if (existsSync(promptsSrc)) {
+      const promptFiles = await readdir(promptsSrc);
+      let copied = 0;
+      for (const file of promptFiles) {
+        const destPath = join(promptsDest, file);
+        if (!existsSync(destPath)) {
+          await copyFile(join(promptsSrc, file), destPath);
+          copied++;
+        }
+      }
+      if (copied > 0) {
+        logger.info({ copied, total: promptFiles.length }, 'Default prompt files copied');
+      }
+    }
+  } catch (err) {
+    logger.warn({ err }, 'Failed to copy default prompt files — agents will use fallback prompts');
+  }
+
+  // 5. Discover projects on disk
   const discovery = await discoverProjects(db, config);
   logger.info(
     {
