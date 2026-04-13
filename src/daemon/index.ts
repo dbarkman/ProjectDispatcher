@@ -25,6 +25,8 @@ import { openDatabase } from '../db/index.js';
 import { runMigrations } from '../db/migrate.js';
 import { seedBuiltins } from '../db/seed.js';
 import { createHttpServer, BIND_HOST } from './http.js';
+import { writePidFile, removePidFile } from './pidfile.js';
+import { startBackgroundJobs } from './jobs.js';
 import { discoverProjects } from './discovery.js';
 import { startWatcher } from './watcher.js';
 import { recoverFromCrash } from './recovery.js';
@@ -89,6 +91,14 @@ async function main(): Promise<void> {
   // 10. Start the heartbeat scheduler (after listen so the server is ready)
   scheduler.start();
 
+  // 11. Write PID file (Gap fix #14)
+  await writePidFile();
+  logger.info({ pid: process.pid }, 'PID file written');
+
+  // 12. Start background jobs (backup + retention cleanup)
+  const jobsInterval = startBackgroundJobs(db, config, logger);
+  logger.info('Background jobs started');
+
   // Graceful shutdown — idempotent so concurrent SIGTERM + SIGINT don't
   // race each other. (Security Review #7 LOW-01)
   let shuttingDown = false;
@@ -96,6 +106,7 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info({ signal }, 'Shutdown signal received');
+    clearInterval(jobsInterval);
     try {
       scheduler.stop();
       logger.info('Scheduler stopped');
@@ -113,6 +124,12 @@ async function main(): Promise<void> {
       logger.info('HTTP server closed');
     } catch (err) {
       logger.error({ err }, 'Error closing HTTP server');
+    }
+    try {
+      await removePidFile();
+      logger.info('PID file removed');
+    } catch (err) {
+      logger.error({ err }, 'Error removing PID file');
     }
     try {
       db.close();
