@@ -54,12 +54,70 @@
   <p class="text-gray-500 max-w-md">No tickets waiting for your attention. Agents are either working or there's nothing in the queue.</p>
 </div>
 {{else}}
-<div class="mb-4 text-sm text-gray-400">
-  {{tickets.length}} ticket{{#unless (eq tickets.length 1)}}s{{/unless}} waiting
+<!-- Filter bar (Gap fix #6) -->
+<div class="flex items-center gap-4 mb-4">
+  <span class="text-sm text-gray-400">
+    {{tickets.length}} ticket{{#unless (eq tickets.length 1)}}s{{/unless}} waiting
+  </span>
+  <div class="flex gap-2 ml-auto">
+    <select id="inbox-filter-project" onchange="filterInbox()"
+      class="bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-gray-300 focus:border-accent focus:outline-none">
+      <option value="">All projects</option>
+      {{#each projects}}
+      <option value="{{this.name}}">{{this.name}}</option>
+      {{/each}}
+    </select>
+    <select id="inbox-filter-priority" onchange="filterInbox()"
+      class="bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-gray-300 focus:border-accent focus:outline-none">
+      <option value="">All priorities</option>
+      <option value="urgent">Urgent</option>
+      <option value="high">High</option>
+      <option value="normal">Normal</option>
+      <option value="low">Low</option>
+    </select>
+    <select id="inbox-sort" onchange="sortInbox()"
+      class="bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-gray-300 focus:border-accent focus:outline-none">
+      <option value="age-desc">Newest first</option>
+      <option value="age-asc">Oldest first</option>
+      <option value="priority">Priority</option>
+      <option value="project">Project</option>
+    </select>
+  </div>
 </div>
 
+<script>
+  const priorityOrder = { urgent: 0, high: 1, normal: 2, low: 3 };
+
+  function filterInbox() {
+    const project = document.getElementById('inbox-filter-project').value;
+    const priority = document.getElementById('inbox-filter-priority').value;
+    const rows = document.querySelectorAll('#inbox-table tbody tr');
+    rows.forEach(row => {
+      const rProject = row.dataset.project || '';
+      const rPriority = row.dataset.priority || '';
+      const matchProject = !project || rProject === project;
+      const matchPriority = !priority || rPriority === priority;
+      row.style.display = (matchProject && matchPriority) ? '' : 'none';
+    });
+  }
+
+  function sortInbox() {
+    const sortBy = document.getElementById('inbox-sort').value;
+    const tbody = document.querySelector('#inbox-table tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    rows.sort((a, b) => {
+      if (sortBy === 'age-asc') return parseInt(a.dataset.updated) - parseInt(b.dataset.updated);
+      if (sortBy === 'age-desc') return parseInt(b.dataset.updated) - parseInt(a.dataset.updated);
+      if (sortBy === 'priority') return (priorityOrder[a.dataset.priority] || 2) - (priorityOrder[b.dataset.priority] || 2);
+      if (sortBy === 'project') return (a.dataset.project || '').localeCompare(b.dataset.project || '');
+      return 0;
+    });
+    rows.forEach(row => tbody.appendChild(row));
+  }
+</script>
+
 <div class="overflow-x-auto">
-  <table class="w-full text-sm">
+  <table id="inbox-table" class="w-full text-sm">
     <thead>
       <tr class="border-b border-navy-700 text-left text-gray-400">
         <th class="pb-3 pr-4 font-medium">Project</th>
@@ -71,6 +129,7 @@
     <tbody>
       {{#each tickets}}
       <tr class="border-b border-navy-800 hover:bg-navy-800/50 cursor-pointer"
+          data-project="{{this.projectName}}" data-priority="{{this.priority}}" data-updated="{{this.updated_at}}"
           onclick="window.location='/ui/tickets/{{this.id}}'">
         <td class="py-3 pr-4">
           <span class="text-accent text-xs font-mono">[{{this.projectName}}]</span>
