@@ -6,6 +6,7 @@
 
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import type { FastifyInstance } from 'fastify';
 import fastifyView from '@fastify/view';
 import fastifyStatic from '@fastify/static';
@@ -34,10 +35,18 @@ Handlebars.registerHelper('relativeTime', (timestamp: number) => {
 });
 
 export async function setupUi(app: FastifyInstance, db: Database, config: Config): Promise<void> {
+  const templatesDir = join(__dirname, '..', 'templates');
+
+  // Register shared partials used both inside full views and rendered standalone
+  // by htmx auto-poll endpoints. One-shot startup I/O before the server binds,
+  // so readFile (not readFileSync) is fine and doesn't block the event loop.
+  const commentThreadSrc = await readFile(join(templatesDir, 'comment-thread.hbs'), 'utf8');
+  Handlebars.registerPartial('commentThread', commentThreadSrc);
+
   // Template engine
   await app.register(fastifyView, {
     engine: { handlebars: Handlebars },
-    root: join(__dirname, '..', 'templates'),
+    root: templatesDir,
     layout: 'layout.hbs',
     options: {
       partials: {},

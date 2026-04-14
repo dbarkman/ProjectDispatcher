@@ -1,12 +1,25 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
+import Handlebars from 'handlebars';
 import { getTicketWithComments } from '../../db/queries/tickets.js';
 import { listAgentRuns } from '../../db/queries/agent-runs.js';
 import { listAttachments } from '../../db/queries/attachments.js';
 import { getInboxCount } from './helpers.js';
 
 const uuidParam = z.object({ id: z.string().uuid() });
+
+function decorateComments(comments: Array<{ type: string; meta: string | null }>) {
+  return comments.map((c) => ({
+    ...c,
+    isMove: c.type === 'move',
+    isFinding: c.type === 'finding',
+    isBlock: c.type === 'block',
+    isComplete: c.type === 'complete',
+    isJournal: c.type === 'journal',
+    parsedMeta: c.meta ? safeParse(c.meta) : null,
+  }));
+}
 
 export async function ticketUiRoutes(app: FastifyInstance, db: Database): Promise<void> {
   // GET /ui/tickets/:id — ticket detail with thread + agent runs
@@ -33,15 +46,7 @@ export async function ticketUiRoutes(app: FastifyInstance, db: Database): Promis
     const prevColumn = currentColIdx > 0 ? columns[currentColIdx - 1] : null;
     const nextColumn = currentColIdx >= 0 && currentColIdx < columns.length - 1 ? columns[currentColIdx + 1] : null;
 
-    const comments = ticket.comments.map((c) => ({
-      ...c,
-      isMove: c.type === 'move',
-      isFinding: c.type === 'finding',
-      isBlock: c.type === 'block',
-      isComplete: c.type === 'complete',
-      isJournal: c.type === 'journal',
-      parsedMeta: c.meta ? safeParse(c.meta) : null,
-    }));
+    const comments = decorateComments(ticket.comments);
 
     // Get agent runs for this ticket (Gap fix #5 — transcript modal)
     const agentRuns = listAgentRuns(db, { ticketId: id }).map((r) => ({
@@ -83,6 +88,24 @@ export async function ticketUiRoutes(app: FastifyInstance, db: Database): Promis
       attachments,
       projectName: project?.name ?? 'Unknown',
     });
+  });
+
+  // GET /ui/tickets/:id/comments — htmx partial endpoint.
+  // Returns only the comment-thread fragment so the ticket page can
+  // poll for updates without reloading the whole view.
+  app.get<{ Params: { id: string } }>('/ui/tickets/:id/comments', async (request, reply) => {
+    const { id } = uuidParam.parse(request.params);
+    const ticket = getTicketWithComments(db, id);
+    if (!ticket) return reply.status(404).send('Ticket not found');
+
+    const comments = decorateComments(ticket.comments);
+    // The partial is registered at startup via setupUi; invoke it directly.
+    const partial = Handlebars.partials['commentThread'];
+    if (!partial) {
+      return reply.status(500).send('commentThread partial not registered');
+    }
+    const template = typeof partial === 'string' ? Handlebars.compile(partial) : partial;
+    return reply.type('text/html').send(template({ comments }));
   });
 }
 

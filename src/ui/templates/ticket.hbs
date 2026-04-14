@@ -200,34 +200,20 @@
   }
 </script>
 
-<!-- Comment thread -->
-<div class="space-y-4 mb-8">
-  {{#each comments}}
-  <div class="border-l-2 pl-4 py-1
-    {{#if this.isFinding}}border-red-500{{/if}}
-    {{#if this.isBlock}}border-yellow-500{{/if}}
-    {{#if this.isComplete}}border-green-500{{/if}}
-    {{#if this.isMove}}border-cyan-500{{/if}}
-    {{#if this.isJournal}}border-gray-600{{/if}}
-    {{#unless this.isFinding}}{{#unless this.isBlock}}{{#unless this.isComplete}}{{#unless this.isMove}}{{#unless this.isJournal}}border-gray-700{{/unless}}{{/unless}}{{/unless}}{{/unless}}{{/unless}}
-  ">
-    <div class="flex items-center gap-2 text-xs mb-1">
-      <span class="font-semibold text-gray-300">{{this.author}}</span>
-      <span class="px-1.5 py-0.5 rounded text-[10px] font-medium
-        {{#if this.isFinding}}bg-red-500/20 text-red-400{{/if}}
-        {{#if this.isBlock}}bg-yellow-500/20 text-yellow-400{{/if}}
-        {{#if this.isComplete}}bg-green-500/20 text-green-400{{/if}}
-        {{#if this.isMove}}bg-cyan-500/20 text-cyan-400{{/if}}
-        {{#if this.isJournal}}bg-gray-500/20 text-gray-400{{/if}}
-        {{#unless this.isFinding}}{{#unless this.isBlock}}{{#unless this.isComplete}}{{#unless this.isMove}}{{#unless this.isJournal}}bg-gray-500/20 text-gray-400{{/unless}}{{/unless}}{{/unless}}{{/unless}}{{/unless}}
-      ">{{this.type}}</span>
-      <span class="text-gray-500">{{relativeTime this.created_at}}</span>
-    </div>
-    {{#if this.body}}
-    <div class="text-sm text-gray-300 whitespace-pre-wrap">{{this.body}}</div>
-    {{/if}}
+<!-- Comment thread — auto-refreshes every 5s while the ticket page is open.
+     Scrollable so long agent journals don't dominate the page. -->
+<div class="mb-8">
+  <div class="flex items-center justify-between mb-2">
+    <h3 class="text-sm font-semibold text-gray-400">Thread</h3>
+    <span class="text-[10px] text-gray-600">auto-refreshing</span>
   </div>
-  {{/each}}
+  <div id="comment-thread"
+       class="max-h-[50vh] overflow-y-auto pr-2 bg-navy-950/40 border border-navy-800 rounded-lg p-3"
+       hx-get="/ui/tickets/{{ticket.id}}/comments"
+       hx-trigger="every 5s"
+       hx-swap="innerHTML">
+    {{> commentThread}}
+  </div>
 </div>
 
 <!-- Actions -->
