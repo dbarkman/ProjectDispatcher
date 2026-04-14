@@ -17,6 +17,12 @@ import {
   updateProjectType,
 } from '../../db/queries/project-types.js';
 import {
+  cloneAgentTypeForProject,
+  getAgentType,
+} from '../../db/queries/agent-types.js';
+import { readPromptFile, writePromptFile } from '../../services/prompt-file.js';
+import { z } from 'zod';
+import {
   createProjectBody,
   updateProjectBody,
   updateProjectWorkflowBody,
@@ -211,6 +217,85 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
     }
     return { status: 'archived' };
   });
+
+  // POST /api/projects/:id/agents/fork — fork a library agent_type into a
+  // project-scoped copy. The fork starts with identical prompt, model, and
+  // tools; editing the fork never affects the library. If a column_id is
+  // supplied, that column is also rebound to the fork in the same transaction.
+  //
+  // The fork gets its own prompt file (<fork-uuid>.md) copied from the library
+  // agent's file, so subsequent prompt edits are isolated.
+  app.post<{ Params: { id: string } }>(
+    '/api/projects/:id/agents/fork',
+    async (request, reply) => {
+      const { id } = idParam.parse(request.params);
+      const body = z.object({
+        agent_type_id: z.string().min(1),
+        column_id: z.string().min(1).optional(),
+      }).parse(request.body);
+
+      const project = getProject(db, id);
+      if (!project) return reply.status(404).send({ error: 'Project not found' });
+
+      const libAgent = getAgentType(db, body.agent_type_id);
+      if (!libAgent || libAgent.owner_project_id !== null) {
+        return reply.status(400).send({
+          error: 'Can only fork library agents (built-in or user-created with no owner)',
+        });
+      }
+
+      // Read the library prompt first — if this fails we haven't changed any
+      // state yet. Missing prompt file = empty fork; agent detail page will
+      // let the user write new content.
+      let promptContent = '';
+      try {
+        promptContent = await readPromptFile(body.agent_type_id);
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          request.log.warn({ err }, 'Failed to read library prompt during fork');
+        }
+      }
+
+      // DB transaction: clone the agent_type row + rebind the column if
+      // requested. Both succeed or neither does.
+      const forked = db.transaction(() => {
+        const workflow = getProjectTypeForProject(db, id);
+        const fork = cloneAgentTypeForProject(db, body.agent_type_id, project.id);
+        // Rewrite the fork's prompt path to a unique file based on its UUID id,
+        // so editing the fork's prompt won't touch the library file.
+        const newPromptFilename = `${fork.id}.md`;
+        db.prepare(
+          'UPDATE agent_types SET system_prompt_path = ?, updated_at = ? WHERE id = ?',
+        ).run(newPromptFilename, Date.now(), fork.id);
+
+        if (body.column_id && workflow) {
+          const col = workflow.columns.find((c) => c.column_id === body.column_id);
+          if (col) {
+            db.prepare(
+              `UPDATE project_type_columns SET agent_type_id = ?
+               WHERE project_type_id = ? AND column_id = ?`,
+            ).run(fork.id, workflow.id, body.column_id);
+          }
+        }
+        return fork;
+      })();
+
+      // Write the fork's prompt file *after* the DB transaction commits.
+      // If this write fails, the fork exists in DB with an empty prompt;
+      // the user can edit it on the agent detail page. (Same DB-first-then-file
+      // pattern as POST /api/agent-types per Review #5 F-05.)
+      try {
+        await writePromptFile(forked.id, promptContent);
+      } catch (err) {
+        request.log.warn({ err }, 'Fork DB commit succeeded but prompt file write failed');
+      }
+
+      return reply.status(201).send({
+        forked_agent_type_id: forked.id,
+        column_id: body.column_id,
+      });
+    },
+  );
 
   // POST /api/projects/:id/wake — manually reset heartbeat
   app.post<{ Params: { id: string } }>('/api/projects/:id/wake', async (request, reply) => {

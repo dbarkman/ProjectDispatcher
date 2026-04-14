@@ -191,6 +191,185 @@ describe('Tickets API', () => {
   });
 });
 
+describe('Project Workflow API (per-project templates)', () => {
+  let projectId: string;
+
+  beforeEach(async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'WF', path: '/wf-test', project_type_id: 'software-dev' },
+    });
+    expect(res.statusCode).toBe(201);
+    projectId = res.json().id;
+  });
+
+  it('registration clones the template into a project-scoped project_type', async () => {
+    // Fetch the workflow — it should exist with cloned columns.
+    const wf = await app.inject({ method: 'GET', url: `/api/projects/${projectId}/workflow` });
+    expect(wf.statusCode).toBe(200);
+    const body = wf.json();
+    expect(body.owner_project_id).toBe(projectId);
+    expect(body.id).not.toBe('software-dev'); // Fresh UUID, not the template slug
+    expect(body.columns.length).toBeGreaterThan(0);
+    // Confirm the library template itself is untouched.
+    const listProjectTypes = await app.inject({ method: 'GET', url: '/api/project-types' });
+    const libSoftwareDev = (listProjectTypes.json() as Array<{ id: string }>).find(
+      (t) => t.id === 'software-dev',
+    );
+    expect(libSoftwareDev).toBeTruthy();
+    // Library's owner is null — it wasn't consumed by the clone
+    const softwareDevFull = await app.inject({ method: 'GET', url: '/api/project-types/software-dev' });
+    expect(softwareDevFull.json().owner_project_id).toBeNull();
+  });
+
+  it('editing one project workflow does not affect another project', async () => {
+    const other = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'WF2', path: '/wf-test-2', project_type_id: 'software-dev' },
+    });
+    expect(other.statusCode).toBe(201);
+    const otherId = other.json().id;
+
+    // Edit the first project's workflow — rename a column.
+    const wfBefore = (await app.inject({ method: 'GET', url: `/api/projects/${projectId}/workflow` })).json();
+    const renamedCols = wfBefore.columns.map((c: { name: string }, i: number) =>
+      i === 0 ? { ...wfBefore.columns[i], name: 'Renamed Inbox' } : wfBefore.columns[i],
+    );
+    const put = await app.inject({
+      method: 'PUT',
+      url: `/api/projects/${projectId}/workflow`,
+      payload: { columns: renamedCols },
+    });
+    expect(put.statusCode).toBe(200);
+
+    // Other project still has the original column names.
+    const otherWf = (await app.inject({ method: 'GET', url: `/api/projects/${otherId}/workflow` })).json();
+    expect(otherWf.columns[0].name).toBe(wfBefore.columns[0].name);
+    expect(otherWf.columns[0].name).not.toBe('Renamed Inbox');
+  });
+
+  it('blank template creates an empty workflow', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'Blank', path: '/blank-test', project_type_id: 'blank' },
+    });
+    expect(res.statusCode).toBe(201);
+    const wf = (await app.inject({
+      method: 'GET',
+      url: `/api/projects/${res.json().id}/workflow`,
+    })).json();
+    expect(wf.columns).toHaveLength(0);
+  });
+
+  it('PUT workflow refuses to remove columns that still hold tickets', async () => {
+    await app.inject({
+      method: 'POST',
+      url: '/api/tickets',
+      payload: { project_id: projectId, title: 'Stuck here', column: 'coding-agent' },
+    });
+    const wf = (await app.inject({ method: 'GET', url: `/api/projects/${projectId}/workflow` })).json();
+    // Try to save the workflow WITHOUT the coding-agent column
+    const reducedCols = wf.columns.filter(
+      (c: { column_id: string }) => c.column_id !== 'coding-agent',
+    );
+    const put = await app.inject({
+      method: 'PUT',
+      url: `/api/projects/${projectId}/workflow`,
+      payload: { columns: reducedCols },
+    });
+    expect(put.statusCode).toBe(409);
+    expect(put.json().error).toMatch(/tickets/i);
+  });
+
+  it('PUT workflow rejects cross-project agent references', async () => {
+    // Register a second project and fork one of its agents.
+    const other = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'OtherProj', path: '/other-wf', project_type_id: 'software-dev' },
+    });
+    const otherId = other.json().id;
+    const fork = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${otherId}/agents/fork`,
+      payload: { agent_type_id: 'coding-agent' },
+    });
+    expect(fork.statusCode).toBe(201);
+    const otherProjectAgentId = fork.json().forked_agent_type_id;
+
+    // Now try to assign that OTHER project's agent to THIS project's column.
+    const wf = (await app.inject({ method: 'GET', url: `/api/projects/${projectId}/workflow` })).json();
+    const cols = wf.columns.map((c: { column_id: string }, i: number) =>
+      i === 1 ? { ...wf.columns[i], agent_type_id: otherProjectAgentId } : wf.columns[i],
+    );
+    const put = await app.inject({
+      method: 'PUT',
+      url: `/api/projects/${projectId}/workflow`,
+      payload: { columns: cols },
+    });
+    expect(put.statusCode).toBe(400);
+    expect(put.json().error).toMatch(/out-of-scope/i);
+  });
+
+  it('fork creates a project-scoped copy, rebinds the column, and does not mutate the library', async () => {
+    const libraryCodingAgent = (await app.inject({
+      method: 'GET',
+      url: '/api/agent-types/coding-agent',
+    })).json();
+
+    const fork = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/agents/fork`,
+      payload: { agent_type_id: 'coding-agent', column_id: 'coding-agent' },
+    });
+    expect(fork.statusCode).toBe(201);
+    const forkedId = fork.json().forked_agent_type_id;
+
+    // The forked agent has a different id (UUID, not slug) and its system_prompt_path
+    // points at a fork-specific file — so editing the fork doesn't write over the library.
+    const forked = (await app.inject({
+      method: 'GET',
+      url: `/api/agent-types/${forkedId}`,
+    })).json();
+    expect(forked.id).not.toBe('coding-agent');
+    expect(forked.owner_project_id).toBe(projectId);
+    expect(forked.system_prompt_path).not.toBe(libraryCodingAgent.system_prompt_path);
+
+    // The project's coding-agent column now points at the fork, not the library.
+    const wf = (await app.inject({
+      method: 'GET',
+      url: `/api/projects/${projectId}/workflow`,
+    })).json();
+    const codingColumn = wf.columns.find((c: { column_id: string }) => c.column_id === 'coding-agent');
+    expect(codingColumn.agent_type_id).toBe(forkedId);
+
+    // Library is untouched.
+    const libAfter = (await app.inject({
+      method: 'GET',
+      url: '/api/agent-types/coding-agent',
+    })).json();
+    expect(libAfter.system_prompt_path).toBe(libraryCodingAgent.system_prompt_path);
+  });
+
+  it('fork rejects forking a project-scoped agent (only library agents are forkable)', async () => {
+    const firstFork = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/agents/fork`,
+      payload: { agent_type_id: 'coding-agent' },
+    });
+    const forkedId = firstFork.json().forked_agent_type_id;
+    const doubleFork = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/agents/fork`,
+      payload: { agent_type_id: forkedId },
+    });
+    expect(doubleFork.statusCode).toBe(400);
+  });
+});
+
 describe('Config API', () => {
   it('GET /api/config returns defaults', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/config' });

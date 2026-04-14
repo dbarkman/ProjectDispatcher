@@ -47,9 +47,12 @@
               data-selected="{{this.agent_type_id}}">
         <option value="">— no agent (human) —</option>
         {{#each ../agentChoices}}
-        <option value="{{this.id}}">{{this.name}} ({{this.scopeLabel}})</option>
+        <option value="{{this.id}}" data-scope="{{this.scope}}">{{this.name}} ({{this.scopeLabel}})</option>
         {{/each}}
       </select>
+      <div class="wf-agent-controls flex gap-1">
+        <!-- Populated by refreshAgentControls based on the selected agent's scope. -->
+      </div>
       <button type="button" onclick="removeRow(this)"
         class="text-gray-500 hover:text-red-400 text-lg leading-none px-2">&times;</button>
     </div>
@@ -92,6 +95,8 @@
     document.getElementById('agent-choices-data').textContent || '[]',
   );
 
+  var PROJECT_ID = '{{project.id}}';
+
   window.addRow = function () {
     var list = document.getElementById('columns-list');
     var row = document.createElement('div');
@@ -107,8 +112,14 @@
         '<p class="text-[10px] text-gray-600 mt-1 font-mono">id: <span class="wf-id">(auto)</span></p>' +
       '</div>' +
       buildAgentSelectHtml() +
+      '<div class="wf-agent-controls flex gap-1"></div>' +
       '<button type="button" onclick="removeRow(this)" class="text-gray-500 hover:text-red-400 text-lg leading-none px-2">\u00D7</button>';
     list.appendChild(row);
+    // Wire the onchange *after* insertion; inline onchange in the built HTML
+    // can't find the function in some browsers for dynamically-added elements.
+    row.querySelector('.wf-agent').addEventListener('change', function () {
+      refreshAgentControls(this);
+    });
     row.querySelector('.wf-name').focus();
   };
 
@@ -212,7 +223,9 @@
     var html = '<select class="wf-agent bg-navy-950 border border-navy-700 rounded px-2 py-1 text-sm text-gray-200 w-48">';
     html += '<option value="">\u2014 no agent (human) \u2014</option>';
     for (var i = 0; i < agentChoices.length; i++) {
-      html += '<option value="' + escapeHtml(agentChoices[i].id) + '">' + escapeHtml(agentChoices[i].name) + ' (' + escapeHtml(agentChoices[i].scopeLabel) + ')</option>';
+      html += '<option value="' + escapeHtml(agentChoices[i].id) +
+              '" data-scope="' + escapeHtml(agentChoices[i].scope) + '">' +
+              escapeHtml(agentChoices[i].name) + ' (' + escapeHtml(agentChoices[i].scopeLabel) + ')</option>';
     }
     html += '</select>';
     return html;
@@ -220,6 +233,72 @@
 
   function escapeHtml(s) {
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // Render the per-row agent controls based on the selected agent's scope:
+  //   library  → "Customize for this project" (POST /agents/fork, rebinds column)
+  //   project  → "Edit" (direct link to the agent detail page)
+  //   (none)   → nothing
+  window.refreshAgentControls = function (selectEl) {
+    var row = selectEl.closest('.workflow-row');
+    var controls = row.querySelector('.wf-agent-controls');
+    controls.innerHTML = '';
+    var selected = selectEl.value;
+    if (!selected) return;
+    var opt = selectEl.options[selectEl.selectedIndex];
+    var scope = opt ? opt.getAttribute('data-scope') : null;
+    if (scope === 'project') {
+      controls.innerHTML =
+        '<a href="/ui/agent-types/' + encodeURIComponent(selected) + '" target="_blank" ' +
+        'class="text-xs text-accent hover:text-accent-hover px-2 py-1">Edit</a>';
+    } else if (scope === 'library') {
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'text-xs text-gray-400 hover:text-accent px-2 py-1 border border-navy-700 rounded';
+      btn.textContent = 'Customize';
+      btn.title = 'Fork this library agent into a project-scoped copy you can edit without affecting other projects';
+      btn.onclick = function () { forkAgent(row, selected); };
+      controls.appendChild(btn);
+    }
+  };
+
+  // Initial pass: paint Customize/Edit for existing rows once refreshAgentControls
+  // is defined. Also wire the onchange listener on existing selects.
+  document.querySelectorAll('.wf-agent').forEach(function (sel) {
+    sel.addEventListener('change', function () { refreshAgentControls(this); });
+    refreshAgentControls(sel);
+  });
+
+  async function forkAgent(row, agentId) {
+    var columnId = null;
+    if (row.getAttribute('data-is-existing') === '1') {
+      var idEl = row.querySelector('.wf-id');
+      columnId = idEl ? idEl.textContent : null;
+    }
+    if (!confirm('Create a project-scoped copy of this agent? You can edit its prompt and model without affecting the library.')) {
+      return;
+    }
+    try {
+      var res = await fetch('/api/projects/' + PROJECT_ID + '/agents/fork', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          agent_type_id: agentId,
+          column_id: columnId || undefined,
+        }),
+      });
+      if (!res.ok) {
+        var err = await res.json();
+        alert('Fork failed: ' + (err.error || res.status));
+        return;
+      }
+      var data = await res.json();
+      // Reload to pick up the new agent in the dropdown and the updated column binding.
+      // After reload the user can click "Edit" on the now-project-scoped agent.
+      window.location = '/ui/agent-types/' + encodeURIComponent(data.forked_agent_type_id);
+    } catch (e) {
+      alert('Fork failed: ' + e.message);
+    }
   }
 })();
 </script>
