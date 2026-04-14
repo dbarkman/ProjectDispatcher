@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
-import Handlebars from 'handlebars';
+import type { TicketComment } from '../../db/queries/tickets.js';
 import { getTicketWithComments } from '../../db/queries/tickets.js';
 import { listAgentRuns } from '../../db/queries/agent-runs.js';
 import { listAttachments } from '../../db/queries/attachments.js';
@@ -9,19 +9,45 @@ import { getInboxCount } from './helpers.js';
 
 const uuidParam = z.object({ id: z.string().uuid() });
 
-function decorateComments(comments: Array<{ type: string; meta: string | null }>) {
-  return comments.map((c) => ({
-    ...c,
-    isMove: c.type === 'move',
-    isFinding: c.type === 'finding',
-    isBlock: c.type === 'block',
-    isComplete: c.type === 'complete',
-    isJournal: c.type === 'journal',
-    parsedMeta: c.meta ? safeParse(c.meta) : null,
-  }));
+interface DecoratedComment extends TicketComment {
+  isMove: boolean;
+  isFinding: boolean;
+  isBlock: boolean;
+  isComplete: boolean;
+  isJournal: boolean;
+  isOther: boolean;
+  parsedMeta: unknown;
 }
 
-export async function ticketUiRoutes(app: FastifyInstance, db: Database): Promise<void> {
+function decorateComments(comments: TicketComment[]): DecoratedComment[] {
+  return comments.map((c) => {
+    const isMove = c.type === 'move';
+    const isFinding = c.type === 'finding';
+    const isBlock = c.type === 'block';
+    const isComplete = c.type === 'complete';
+    const isJournal = c.type === 'journal';
+    return {
+      ...c,
+      isMove,
+      isFinding,
+      isBlock,
+      isComplete,
+      isJournal,
+      isOther: !(isMove || isFinding || isBlock || isComplete || isJournal),
+      parsedMeta: c.meta ? safeParse(c.meta) : null,
+    };
+  });
+}
+
+interface TicketRoutesDeps {
+  commentThreadTemplate: HandlebarsTemplateDelegate;
+}
+
+export async function ticketUiRoutes(
+  app: FastifyInstance,
+  db: Database,
+  deps: TicketRoutesDeps,
+): Promise<void> {
   // GET /ui/tickets/:id — ticket detail with thread + agent runs
   app.get<{ Params: { id: string } }>('/ui/tickets/:id', async (request, reply) => {
     const { id } = uuidParam.parse(request.params);
@@ -32,14 +58,17 @@ export async function ticketUiRoutes(app: FastifyInstance, db: Database): Promis
       .prepare('SELECT id, name, project_type_id FROM projects WHERE id = ?')
       .get(ticket.project_id) as { id: string; name: string; project_type_id: string } | undefined;
 
+    // Defense in depth: ticket must resolve to an existing project. The daemon
+    // has FK constraints so this shouldn't ever fail in practice, but refuse
+    // to render anything if the invariant is broken. (Review #8 defense-in-depth)
+    if (!project) return reply.status(404).send('Ticket not found');
+
     // Get available columns for the move dropdown
-    const columns = project
-      ? (db
-          .prepare(
-            'SELECT column_id, name FROM project_type_columns WHERE project_type_id = ? ORDER BY "order"',
-          )
-          .all(project.project_type_id) as Array<{ column_id: string; name: string }>)
-      : [];
+    const columns = db
+      .prepare(
+        'SELECT column_id, name FROM project_type_columns WHERE project_type_id = ? ORDER BY "order"',
+      )
+      .all(project.project_type_id) as Array<{ column_id: string; name: string }>;
 
     // Get the workflow column order for next/previous column buttons
     const currentColIdx = columns.findIndex((c) => c.column_id === ticket.column);
@@ -71,9 +100,7 @@ export async function ticketUiRoutes(app: FastifyInstance, db: Database): Promis
       inboxCount: getInboxCount(db) || undefined,
       breadcrumbs: [
         { label: 'Inbox', href: '/' },
-        ...(project
-          ? [{ label: project.name, href: `/ui/projects/${project.id}` }]
-          : []),
+        { label: project.name, href: `/ui/projects/${project.id}` },
         { label: ticket.title, href: `/ui/tickets/${ticket.id}` },
       ],
       ticket: {
@@ -86,7 +113,7 @@ export async function ticketUiRoutes(app: FastifyInstance, db: Database): Promis
       nextColumn,
       agentRuns,
       attachments,
-      projectName: project?.name ?? 'Unknown',
+      projectName: project.name,
     });
   });
 
@@ -99,13 +126,10 @@ export async function ticketUiRoutes(app: FastifyInstance, db: Database): Promis
     if (!ticket) return reply.status(404).send('Ticket not found');
 
     const comments = decorateComments(ticket.comments);
-    // The partial is registered at startup via setupUi; invoke it directly.
-    const partial = Handlebars.partials['commentThread'];
-    if (!partial) {
-      return reply.status(500).send('commentThread partial not registered');
-    }
-    const template = typeof partial === 'string' ? Handlebars.compile(partial) : partial;
-    return reply.type('text/html').send(template({ comments }));
+    return reply
+      .type('text/html; charset=utf-8')
+      .header('Cache-Control', 'no-store')
+      .send(deps.commentThreadTemplate({ comments }));
   });
 }
 

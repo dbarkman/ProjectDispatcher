@@ -210,7 +210,7 @@
   <div id="comment-thread"
        class="max-h-[50vh] overflow-y-auto pr-2 bg-navy-950/40 border border-navy-800 rounded-lg p-3"
        hx-get="/ui/tickets/{{ticket.id}}/comments"
-       hx-trigger="every 5s"
+       hx-trigger="every 5s [document.visibilityState === 'visible']"
        hx-swap="innerHTML">
     {{> commentThread}}
   </div>

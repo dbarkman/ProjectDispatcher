@@ -37,11 +37,13 @@ Handlebars.registerHelper('relativeTime', (timestamp: number) => {
 export async function setupUi(app: FastifyInstance, db: Database, config: Config): Promise<void> {
   const templatesDir = join(__dirname, '..', 'templates');
 
-  // Register shared partials used both inside full views and rendered standalone
-  // by htmx auto-poll endpoints. One-shot startup I/O before the server binds,
-  // so readFile (not readFileSync) is fine and doesn't block the event loop.
+  // Register shared partials used inside full views, and pre-compile them
+  // as standalone templates for htmx auto-poll endpoints that render just
+  // the fragment. One-shot startup I/O before listen() — async readFile
+  // doesn't block anything here.
   const commentThreadSrc = await readFile(join(templatesDir, 'comment-thread.hbs'), 'utf8');
   Handlebars.registerPartial('commentThread', commentThreadSrc);
+  const commentThreadTemplate = Handlebars.compile(commentThreadSrc);
 
   // Template engine
   await app.register(fastifyView, {
@@ -63,7 +65,7 @@ export async function setupUi(app: FastifyInstance, db: Database, config: Config
   // Mount UI page routes
   await inboxRoutes(app, db);
   await projectUiRoutes(app, db, config);
-  await ticketUiRoutes(app, db);
+  await ticketUiRoutes(app, db, { commentThreadTemplate });
   await agentTypeUiRoutes(app, db);
   await settingsUiRoutes(app, config);
 }
