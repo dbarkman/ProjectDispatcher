@@ -88,8 +88,9 @@
 
 <script>
 (function () {
-  // Restore selected agents on each row — Handlebars can't do it inside {{#each}}
-  // nested context cleanly, so we set it post-render via data-selected.
+  // Restore selected agents on each row — Handlebars can't do that inside
+  // the server-side loop cleanly (nested context), so we set it via
+  // data-selected attributes on each select element after render.
   document.querySelectorAll('.wf-agent').forEach(function (sel) {
     var v = sel.getAttribute('data-selected');
     if (v != null && v !== '') sel.value = v;

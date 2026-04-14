@@ -354,6 +354,19 @@ describe('Project Workflow API (per-project templates)', () => {
     expect(libAfter.system_prompt_path).toBe(libraryCodingAgent.system_prompt_path);
   });
 
+  it('renders the workflow editor HTML page without a Handlebars parse error', async () => {
+    // Integration-level smoke test — the JSON API tests never exercise the
+    // Handlebars render path, so a stray `{{#each}}` in a JS comment (etc.)
+    // would only fail at first runtime request. This test catches that.
+    const res = await app.inject({
+      method: 'GET',
+      url: `/ui/projects/${projectId}/workflow`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/html/);
+    expect(res.body).toContain('Workflow');
+  });
+
   it('PUT workflow rejects duplicate column_id / order', async () => {
     const wf = (await app.inject({ method: 'GET', url: `/api/projects/${projectId}/workflow` })).json();
     const dupCols = [...wf.columns, { ...wf.columns[0], order: 99 }];
