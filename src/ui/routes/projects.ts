@@ -5,6 +5,7 @@ import { listProjects, getProject } from '../../db/queries/projects.js';
 import { listProjectTypes } from '../../db/queries/project-types.js';
 import { discoverProjects, folderDisplayName } from '../../daemon/discovery.js';
 import { getInboxCount } from './helpers.js';
+import { getTicketStatuses } from '../../db/queries/agent-runs.js';
 import type { Config } from '../../config.schema.js';
 
 const uuidParam = z.object({ id: z.string().uuid() });
@@ -83,6 +84,8 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
       if (list) list.push(t);
     }
 
+    const ticketStatuses = getTicketStatuses(db, id);
+
     const boardColumns = columns.map((col) => ({
       ...col,
       isAgent: col.agent_type_id !== null,
@@ -92,6 +95,7 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
         ...t,
         shortId: t.id.slice(0, 8),
         isClaimed: t.claimed_by_run_id !== null,
+        statusColor: ticketStatuses.get(t.id) ?? 'gray',
       })),
     }));
 

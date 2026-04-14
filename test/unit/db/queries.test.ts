@@ -38,6 +38,7 @@ import {
   getAttachment,
   deleteAttachment,
 } from '../../../src/db/queries/attachments.js';
+import { getTicketStatuses } from '../../../src/db/queries/agent-runs.js';
 
 let db: Database;
 
@@ -302,5 +303,117 @@ describe('attachments queries', () => {
     deleteTicket(db, ticketId);
     expect(getAttachment(db, a.id)).toBeNull();
     expect(listAttachments(db, ticketId)).toHaveLength(0);
+  });
+});
+
+// --- Ticket Statuses ---
+
+describe('getTicketStatuses', () => {
+  let projectId: string;
+
+  beforeEach(() => {
+    const p = createProject(db, { name: 'StatusProj', path: '/sp', projectTypeId: 'software-dev' });
+    projectId = p.id;
+  });
+
+  function insertRun(ticketId: string, exitStatus: string, startedAt: number, endedAt: number | null = startedAt + 1000) {
+    const id = crypto.randomUUID();
+    db.prepare(
+      `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, ended_at, exit_status)
+       VALUES (?, ?, 'coding-agent', 'claude-opus-4-6', ?, ?, ?)`,
+    ).run(id, ticketId, startedAt, endedAt, exitStatus);
+    return id;
+  }
+
+  it('returns gray for ticket with no runs and no issues', () => {
+    const t = createTicket(db, { projectId, title: 'Idle ticket' });
+    const statuses = getTicketStatuses(db, projectId);
+    expect(statuses.get(t.id)).toBe('gray');
+  });
+
+  it('returns green for ticket with successful run', () => {
+    const t = createTicket(db, { projectId, title: 'Good ticket' });
+    insertRun(t.id, 'success', 1000);
+    const statuses = getTicketStatuses(db, projectId);
+    expect(statuses.get(t.id)).toBe('green');
+  });
+
+  it('returns red for ticket with crashed run', () => {
+    const t = createTicket(db, { projectId, title: 'Crashed ticket' });
+    insertRun(t.id, 'crashed', 1000);
+    const statuses = getTicketStatuses(db, projectId);
+    expect(statuses.get(t.id)).toBe('red');
+  });
+
+  it('returns red for ticket with timeout run', () => {
+    const t = createTicket(db, { projectId, title: 'Timeout ticket' });
+    insertRun(t.id, 'timeout', 1000);
+    const statuses = getTicketStatuses(db, projectId);
+    expect(statuses.get(t.id)).toBe('red');
+  });
+
+  it('returns red for ticket with blocked run', () => {
+    const t = createTicket(db, { projectId, title: 'Blocked ticket' });
+    insertRun(t.id, 'blocked', 1000);
+    const statuses = getTicketStatuses(db, projectId);
+    expect(statuses.get(t.id)).toBe('red');
+  });
+
+  it('returns gray for ticket with running (no exit) status', () => {
+    const t = createTicket(db, { projectId, title: 'Running ticket' });
+    insertRun(t.id, 'running', 1000, null);
+    const statuses = getTicketStatuses(db, projectId);
+    expect(statuses.get(t.id)).toBe('gray');
+  });
+
+  it('returns red for ticket with only finding comments and no runs', () => {
+    const t = createTicket(db, { projectId, title: 'Finding only' });
+    addComment(db, t.id, { type: 'finding', author: 'agent:code-reviewer:r1', body: 'Issue found' });
+    const statuses = getTicketStatuses(db, projectId);
+    expect(statuses.get(t.id)).toBe('red');
+  });
+
+  it('returns red for ticket with only block comments and no runs', () => {
+    const t = createTicket(db, { projectId, title: 'Block only' });
+    addComment(db, t.id, { type: 'block', author: 'system:recovery', body: 'Crashed' });
+    const statuses = getTicketStatuses(db, projectId);
+    expect(statuses.get(t.id)).toBe('red');
+  });
+
+  it('returns red when finding comment is newer than successful run', () => {
+    const t = createTicket(db, { projectId, title: 'Finding after success' });
+    insertRun(t.id, 'success', 1000, 2000);
+    addComment(db, t.id, { type: 'finding', author: 'agent:code-reviewer:r1', body: 'Nope' });
+    const statuses = getTicketStatuses(db, projectId);
+    expect(statuses.get(t.id)).toBe('red');
+  });
+
+  it('returns green when successful run is newer than finding comment', () => {
+    const t = createTicket(db, { projectId, title: 'Success after finding' });
+    addComment(db, t.id, { type: 'finding', author: 'agent:code-reviewer:r1', body: 'Old finding' });
+    // Run ends well after the comment (comment created_at is ~Date.now())
+    insertRun(t.id, 'success', Date.now() + 100000, Date.now() + 200000);
+    const statuses = getTicketStatuses(db, projectId);
+    expect(statuses.get(t.id)).toBe('green');
+  });
+
+  it('uses latest run when ticket has multiple runs', () => {
+    const t = createTicket(db, { projectId, title: 'Multiple runs' });
+    insertRun(t.id, 'crashed', 1000, 2000);
+    insertRun(t.id, 'success', 3000, 4000);
+    const statuses = getTicketStatuses(db, projectId);
+    expect(statuses.get(t.id)).toBe('green');
+  });
+
+  it('handles multiple tickets in same project independently', () => {
+    const t1 = createTicket(db, { projectId, title: 'Good' });
+    const t2 = createTicket(db, { projectId, title: 'Bad' });
+    const t3 = createTicket(db, { projectId, title: 'Idle' });
+    insertRun(t1.id, 'success', 1000);
+    insertRun(t2.id, 'crashed', 1000);
+    const statuses = getTicketStatuses(db, projectId);
+    expect(statuses.get(t1.id)).toBe('green');
+    expect(statuses.get(t2.id)).toBe('red');
+    expect(statuses.get(t3.id)).toBe('gray');
   });
 });

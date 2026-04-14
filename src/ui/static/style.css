@@ -59,6 +59,18 @@
 .priority-normal { background-color: #6b7280; }
 .priority-low { background-color: #4a4a4a; }
 
+/* Status dots — ticket health on the board */
+.status-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.status-dot-green { background-color: #02b159; }
+.status-dot-red { background-color: #ef4444; }
+.status-dot-gray { background-color: #6b7280; }
+
 /* Status badges */
 .badge {
   display: inline-block;
