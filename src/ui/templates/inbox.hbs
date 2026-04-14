@@ -61,14 +61,14 @@
   </span>
   <div class="flex gap-2 ml-auto">
     <select id="inbox-filter-project" onchange="filterInbox()"
-      class="bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-gray-300 focus:border-accent focus:outline-none">
+      class="bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-300 focus:border-accent focus:outline-none">
       <option value="">All projects</option>
       {{#each projects}}
       <option value="{{this.name}}">{{this.name}}</option>
       {{/each}}
     </select>
     <select id="inbox-filter-priority" onchange="filterInbox()"
-      class="bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-gray-300 focus:border-accent focus:outline-none">
+      class="bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-300 focus:border-accent focus:outline-none">
       <option value="">All priorities</option>
       <option value="urgent">Urgent</option>
       <option value="high">High</option>
@@ -76,7 +76,7 @@
       <option value="low">Low</option>
     </select>
     <select id="inbox-sort" onchange="sortInbox()"
-      class="bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-gray-300 focus:border-accent focus:outline-none">
+      class="bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-300 focus:border-accent focus:outline-none">
       <option value="age-desc">Newest first</option>
       <option value="age-asc">Oldest first</option>
       <option value="priority">Priority</option>
