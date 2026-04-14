@@ -88,8 +88,15 @@
 
 <script>
 (function () {
-  // Restore selected agents on each row — Handlebars can't do it inside {{#each}}
-  // nested context cleanly, so we set it post-render via data-selected.
+  // Restore selected agents on each row. The server loop can't set the
+  // selected option cleanly from inside a nested context, so each select
+  // carries a data-selected attribute that we apply here after render.
+  //
+  // IMPORTANT: Do not write literal Handlebars expressions (e.g. the
+  // pound-each form, double-stash variable refs) in JS comments or string
+  // literals inside .hbs templates — Handlebars parses the whole file
+  // top-to-bottom and will treat them as real blocks. The smoke test in
+  // test/integration/api.test.ts catches this class of bug in CI.
   document.querySelectorAll('.wf-agent').forEach(function (sel) {
     var v = sel.getAttribute('data-selected');
     if (v != null && v !== '') sel.value = v;

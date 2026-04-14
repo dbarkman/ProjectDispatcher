@@ -354,6 +354,21 @@ describe('Project Workflow API (per-project templates)', () => {
     expect(libAfter.system_prompt_path).toBe(libraryCodingAgent.system_prompt_path);
   });
 
+  it('renders the workflow editor HTML page without a Handlebars parse error', async () => {
+    // The rest of this suite exercises only /api/projects/:id/workflow (JSON).
+    // Handlebars compiles templates lazily on first request, so a stray
+    // template expression in a JS comment or string literal inside workflow.hbs
+    // would only fail at runtime on the user's first click. This smoke test
+    // forces the render path so that class of bug surfaces in CI.
+    const res = await app.inject({
+      method: 'GET',
+      url: `/ui/projects/${projectId}/workflow`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/html/);
+    expect(res.body).toContain('Workflow');
+  });
+
   it('PUT workflow rejects duplicate column_id / order', async () => {
     const wf = (await app.inject({ method: 'GET', url: `/api/projects/${projectId}/workflow` })).json();
     const dupCols = [...wf.columns, { ...wf.columns[0], order: 99 }];
