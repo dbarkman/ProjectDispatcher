@@ -298,33 +298,58 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
       }
 
       // Step 1: DB clone + optional column rebind, in one transaction.
+      // Snapshot the column's prior agent_type_id BEFORE we rebind, so the
+      // rollback path (step 2) can restore it. Without this, the FK from
+      // project_type_columns.agent_type_id → agent_types.id (no ON DELETE
+      // clause = NO ACTION in SQLite) would block the rollback DELETE,
+      // leaving an orphan agent row referenced by the column. (Review #N2 L-03.)
       const clone = db.transaction(() => {
         const workflow = getProjectTypeForProject(db, id);
         const result = cloneAgentTypeForProject(db, body.agent_type_id, project.id);
+        let priorColumnAgentId: string | null = null;
+        let rebound = false;
         if (body.column_id && workflow) {
           const col = workflow.columns.find((c) => c.column_id === body.column_id);
           if (col) {
+            priorColumnAgentId = col.agent_type_id;
             db.prepare(
               `UPDATE project_type_columns SET agent_type_id = ?
                WHERE project_type_id = ? AND column_id = ?`,
             ).run(result.agent.id, workflow.id, body.column_id);
+            rebound = true;
           }
         }
-        return result;
+        return { ...result, priorColumnAgentId, rebound, workflowId: workflow?.id ?? null };
       })();
 
       // Step 2: write the fork's prompt file. If this fails, roll back the
       // DB clone so the user doesn't end up with a visible-but-broken fork.
-      // The reviewer (H-1) correctly pushed back on the earlier log-and-shrug
-      // behavior: a fork that silently has no prompt is worse than a loud
-      // failure. (Review #N1 H-1 / security L-02.)
+      // The rollback must restore the column's prior agent_type_id first,
+      // otherwise the FK blocks the agent row delete. (Review #N1 H-1 /
+      // security L-02 / Review #N2 L-03.)
       try {
         await writePromptFile(clone.agent.id, promptContent);
       } catch (err) {
         request.log.error({ err }, 'Fork prompt file write failed; rolling back DB clone');
-        db.transaction(() => {
-          db.prepare('DELETE FROM agent_types WHERE id = ?').run(clone.agent.id);
-        })();
+        try {
+          db.transaction(() => {
+            if (clone.rebound && body.column_id && clone.workflowId) {
+              db.prepare(
+                `UPDATE project_type_columns SET agent_type_id = ?
+                 WHERE project_type_id = ? AND column_id = ?`,
+              ).run(clone.priorColumnAgentId, clone.workflowId, body.column_id);
+            }
+            db.prepare('DELETE FROM agent_types WHERE id = ?').run(clone.agent.id);
+          })();
+        } catch (rollbackErr) {
+          // Rollback itself failed — log loudly; operator will have to clean up
+          // manually. We still return 500 to the user; a second, compounding
+          // error doesn't change the outcome. (Fail-loud principle.)
+          request.log.error(
+            { rollbackErr, forkAgentId: clone.agent.id },
+            'Fork rollback failed — orphan agent row may remain',
+          );
+        }
         return reply.status(500).send({ error: 'Failed to write fork prompt file' });
       }
 
