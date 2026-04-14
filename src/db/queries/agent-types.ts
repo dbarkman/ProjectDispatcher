@@ -1,4 +1,5 @@
 import type { Database } from 'better-sqlite3';
+import { randomUUID } from 'node:crypto';
 
 export interface AgentType {
   id: string;
@@ -11,6 +12,7 @@ export interface AgentType {
   timeout_minutes: number;
   max_retries: number;
   is_builtin: number;
+  owner_project_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -37,8 +39,65 @@ export interface UpdateAgentTypeData {
   maxRetries?: number;
 }
 
+/**
+ * Library agents — built-in templates and user-created library entries.
+ * Project-scoped clones are excluded. Used by the agent library UI and
+ * the column-editor dropdown.
+ */
 export function listAgentTypes(db: Database): AgentType[] {
-  return db.prepare('SELECT * FROM agent_types ORDER BY name').all() as AgentType[];
+  return db
+    .prepare('SELECT * FROM agent_types WHERE owner_project_id IS NULL ORDER BY name')
+    .all() as AgentType[];
+}
+
+/**
+ * Agents owned by a specific project — forks of library agents that the user
+ * customized for this project. Shown in the project workflow editor alongside
+ * library agents.
+ */
+export function listAgentTypesForProject(db: Database, projectId: string): AgentType[] {
+  return db
+    .prepare('SELECT * FROM agent_types WHERE owner_project_id = ? ORDER BY name')
+    .all(projectId) as AgentType[];
+}
+
+/**
+ * Clone a library agent into a project-scoped copy. The original prompt file
+ * path is reused by default — the fork starts with identical behavior until
+ * the user edits the copy. If the caller wants a separate prompt file,
+ * pass newPromptPath.
+ */
+export function cloneAgentTypeForProject(
+  db: Database,
+  templateId: string,
+  ownerProjectId: string,
+  newPromptPath?: string,
+): AgentType {
+  const template = getAgentType(db, templateId);
+  if (!template) throw new Error(`Agent template not found: ${templateId}`);
+  const now = Date.now();
+  const newId = randomUUID();
+  db.prepare(
+    `INSERT INTO agent_types (
+      id, name, description, system_prompt_path, model, allowed_tools,
+      permission_mode, timeout_minutes, max_retries, is_builtin,
+      owner_project_id, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+  ).run(
+    newId,
+    template.name,
+    template.description,
+    newPromptPath ?? template.system_prompt_path,
+    template.model,
+    template.allowed_tools,
+    template.permission_mode,
+    template.timeout_minutes,
+    template.max_retries,
+    ownerProjectId,
+    now,
+    now,
+  );
+  return getAgentType(db, newId)!;
 }
 
 export function getAgentType(db: Database, id: string): AgentType | null {

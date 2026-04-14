@@ -31,13 +31,18 @@
           class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
       </div>
       <div class="mb-4">
-        <label class="block text-xs text-gray-500 mb-1">Project Type</label>
+        <label class="block text-xs text-gray-500 mb-1">Template</label>
         <select name="project_type_id" required
           class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
           {{#each projectTypes}}
           <option value="{{this.id}}">{{this.name}}</option>
           {{/each}}
+          <option value="blank">— blank (build from scratch) —</option>
         </select>
+        <p class="text-[10px] text-gray-500 mt-1">
+          Templates are starting points. A private copy is made on registration —
+          editing this project's workflow later won't affect the template or other projects.
+        </p>
       </div>
       <div class="flex gap-2">
         <button type="submit"

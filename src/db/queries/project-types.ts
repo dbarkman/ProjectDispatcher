@@ -1,4 +1,5 @@
 import type { Database } from 'better-sqlite3';
+import { randomUUID } from 'node:crypto';
 
 export interface ProjectType {
   id: string;
@@ -6,6 +7,7 @@ export interface ProjectType {
   description: string | null;
   icon: string | null;
   is_builtin: number;
+  owner_project_id: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -35,8 +37,114 @@ export interface CreateProjectTypeData {
   }>;
 }
 
+/**
+ * List library templates — is_builtin=1 plus user-created with owner_project_id NULL.
+ * Project-scoped clones are filtered out. Used by the template picker and the
+ * project-types admin list.
+ */
 export function listProjectTypes(db: Database): ProjectType[] {
-  return db.prepare('SELECT * FROM project_types ORDER BY name').all() as ProjectType[];
+  return db
+    .prepare('SELECT * FROM project_types WHERE owner_project_id IS NULL ORDER BY name')
+    .all() as ProjectType[];
+}
+
+/**
+ * Get the project_type for a specific project. Each project owns a private
+ * copy after registration; listProjectTypes filters these out of the library.
+ */
+export function getProjectTypeForProject(
+  db: Database,
+  projectId: string,
+): ProjectTypeWithColumns | null {
+  const pt = db
+    .prepare('SELECT * FROM project_types WHERE owner_project_id = ? LIMIT 1')
+    .get(projectId) as ProjectType | undefined;
+  if (!pt) return null;
+  const columns = db
+    .prepare('SELECT * FROM project_type_columns WHERE project_type_id = ? ORDER BY "order"')
+    .all(pt.id) as ProjectTypeColumn[];
+  return { ...pt, columns };
+}
+
+/**
+ * Clone a library project_type into a new row. The clone gets a fresh UUID id
+ * so it can't conflict with the library slug. Columns are copied verbatim —
+ * including their agent_type_id references, which continue pointing at
+ * library agent types until the user forks them.
+ *
+ * `ownerProjectId` is nullable here so the clone can be created *before* the
+ * project row exists (the FK on projects.project_type_id forces a valid
+ * project_type to exist first). Callers that want the clone project-scoped
+ * set the owner via a follow-up UPDATE once the project row is written.
+ * See daemon/routes/projects.ts POST handler for the full dance.
+ */
+export function cloneProjectType(
+  db: Database,
+  templateId: string,
+  ownerProjectId: string | null,
+  nameOverride?: string,
+): ProjectTypeWithColumns {
+  const template = getProjectType(db, templateId);
+  if (!template) throw new Error(`Template not found: ${templateId}`);
+  const now = Date.now();
+  const newId = randomUUID();
+
+  db.transaction(() => {
+    db.prepare(
+      `INSERT INTO project_types (id, name, description, is_builtin, owner_project_id, created_at, updated_at)
+       VALUES (?, ?, ?, 0, ?, ?, ?)`,
+    ).run(
+      newId,
+      nameOverride ?? template.name,
+      template.description,
+      ownerProjectId,
+      now,
+      now,
+    );
+    const insertCol = db.prepare(
+      `INSERT INTO project_type_columns (project_type_id, column_id, name, agent_type_id, "order")
+       VALUES (?, ?, ?, ?, ?)`,
+    );
+    for (const col of template.columns) {
+      insertCol.run(newId, col.column_id, col.name, col.agent_type_id, col.order);
+    }
+  })();
+
+  return getProjectType(db, newId)!;
+}
+
+/**
+ * Create an empty project_type row. Columns are added via updateProjectType
+ * afterward. Like cloneProjectType, owner_project_id is nullable and typically
+ * set after the project row exists.
+ */
+export function createEmptyProjectType(
+  db: Database,
+  name: string,
+  ownerProjectId: string | null = null,
+): ProjectTypeWithColumns {
+  const now = Date.now();
+  const newId = randomUUID();
+  db.prepare(
+    `INSERT INTO project_types (id, name, description, is_builtin, owner_project_id, created_at, updated_at)
+     VALUES (?, ?, NULL, 0, ?, ?, ?)`,
+  ).run(newId, name, ownerProjectId, now, now);
+  return getProjectType(db, newId)!;
+}
+
+/**
+ * Set owner_project_id on an existing project_type row. Used during project
+ * registration, after the project row is created, to scope a freshly-cloned
+ * type to its owner.
+ */
+export function setProjectTypeOwner(
+  db: Database,
+  projectTypeId: string,
+  ownerProjectId: string,
+): void {
+  db.prepare(
+    'UPDATE project_types SET owner_project_id = ?, updated_at = ? WHERE id = ?',
+  ).run(ownerProjectId, Date.now(), projectTypeId);
 }
 
 export function getProjectType(db: Database, id: string): ProjectTypeWithColumns | null {

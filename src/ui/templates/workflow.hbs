@@ -1,0 +1,226 @@
+{{#if isLegacy}}
+<div class="card max-w-2xl">
+  <h3 class="text-sm font-semibold text-gray-300 mb-2">Legacy project</h3>
+  <p class="text-sm text-gray-400 mb-3">
+    This project was registered before per-project workflows existed and still
+    points at the shared library template
+    <code class="text-accent">{{legacyLibraryType.name}}</code>.
+    Edits here would affect every project using that template — not what you want.
+  </p>
+  <p class="text-sm text-gray-400">
+    To customize this project's workflow, archive it and re-register the folder.
+    New projects get a private copy of the chosen template on registration.
+  </p>
+</div>
+{{else}}
+
+<div class="flex items-center justify-between mb-4">
+  <div>
+    <h3 class="text-sm font-semibold text-gray-300">Workflow — {{workflow.name}}</h3>
+    <p class="text-xs text-gray-500 mt-1">
+      Columns flow left to right in the order below. Each column can be assigned an agent
+      that automatically picks up tickets landing in it; leave blank for human-only columns.
+    </p>
+  </div>
+  <a href="/ui/projects/{{project.id}}"
+    class="text-xs text-gray-400 hover:text-gray-200">&larr; Back to board</a>
+</div>
+
+<div id="workflow-editor" class="card">
+  <div id="columns-list" class="space-y-2 mb-4">
+    {{#each workflow.columns}}
+    <div class="workflow-row flex items-center gap-2 bg-navy-900 border border-navy-700 rounded-lg p-3"
+         data-column-id="{{this.column_id}}"
+         data-is-existing="1">
+      <div class="flex flex-col gap-1">
+        <button type="button" onclick="moveRow(this, -1)"
+          class="text-gray-500 hover:text-gray-200 text-xs leading-none">&#9650;</button>
+        <button type="button" onclick="moveRow(this, 1)"
+          class="text-gray-500 hover:text-gray-200 text-xs leading-none">&#9660;</button>
+      </div>
+      <div class="flex-1">
+        <input type="text" class="wf-name w-full bg-navy-950 border border-navy-700 rounded px-2 py-1 text-sm text-gray-200"
+          value="{{this.name}}" placeholder="Column name">
+        <p class="text-[10px] text-gray-600 mt-1 font-mono">id: <span class="wf-id">{{this.column_id}}</span></p>
+      </div>
+      <select class="wf-agent bg-navy-950 border border-navy-700 rounded px-2 py-1 text-sm text-gray-200 w-48"
+              data-selected="{{this.agent_type_id}}">
+        <option value="">— no agent (human) —</option>
+        {{#each ../agentChoices}}
+        <option value="{{this.id}}">{{this.name}} ({{this.scopeLabel}})</option>
+        {{/each}}
+      </select>
+      <button type="button" onclick="removeRow(this)"
+        class="text-gray-500 hover:text-red-400 text-lg leading-none px-2">&times;</button>
+    </div>
+    {{/each}}
+  </div>
+
+  <div class="flex gap-2 mb-4">
+    <button type="button" onclick="addRow()"
+      class="px-3 py-1.5 bg-navy-700 hover:bg-navy-600 text-gray-200 text-sm rounded-lg transition-colors">
+      + Add Column
+    </button>
+  </div>
+
+  <div class="flex items-center justify-between border-t border-navy-700 pt-4">
+    <span id="save-status" class="text-xs text-gray-500"></span>
+    <button type="button" onclick="saveWorkflow()"
+      class="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">
+      Save Workflow
+    </button>
+  </div>
+</div>
+
+<!--
+  Embed the agent-choices list as JSON inside a script tag with a non-JS
+  mime type so nothing in agent names (even "</script>") can break out
+  and execute as code. Parsed with JSON.parse at runtime.
+-->
+<script id="agent-choices-data" type="application/json">{{{agentChoicesJson}}}</script>
+
+<script>
+(function () {
+  // Restore selected agents on each row — Handlebars can't do it inside {{#each}}
+  // nested context cleanly, so we set it post-render via data-selected.
+  document.querySelectorAll('.wf-agent').forEach(function (sel) {
+    var v = sel.getAttribute('data-selected');
+    if (v != null && v !== '') sel.value = v;
+  });
+
+  var agentChoices = JSON.parse(
+    document.getElementById('agent-choices-data').textContent || '[]',
+  );
+
+  window.addRow = function () {
+    var list = document.getElementById('columns-list');
+    var row = document.createElement('div');
+    row.className = 'workflow-row flex items-center gap-2 bg-navy-900 border border-navy-700 rounded-lg p-3';
+    row.setAttribute('data-is-existing', '0');
+    row.innerHTML =
+      '<div class="flex flex-col gap-1">' +
+        '<button type="button" onclick="moveRow(this, -1)" class="text-gray-500 hover:text-gray-200 text-xs leading-none">\u25B2</button>' +
+        '<button type="button" onclick="moveRow(this, 1)" class="text-gray-500 hover:text-gray-200 text-xs leading-none">\u25BC</button>' +
+      '</div>' +
+      '<div class="flex-1">' +
+        '<input type="text" class="wf-name w-full bg-navy-950 border border-navy-700 rounded px-2 py-1 text-sm text-gray-200" placeholder="Column name">' +
+        '<p class="text-[10px] text-gray-600 mt-1 font-mono">id: <span class="wf-id">(auto)</span></p>' +
+      '</div>' +
+      buildAgentSelectHtml() +
+      '<button type="button" onclick="removeRow(this)" class="text-gray-500 hover:text-red-400 text-lg leading-none px-2">\u00D7</button>';
+    list.appendChild(row);
+    row.querySelector('.wf-name').focus();
+  };
+
+  window.removeRow = function (btn) {
+    var row = btn.closest('.workflow-row');
+    if (row.getAttribute('data-is-existing') === '1') {
+      if (!confirm('Remove this column?\n\nTickets currently in this column will block the save. Move them first if any exist.')) {
+        return;
+      }
+    }
+    row.remove();
+  };
+
+  window.moveRow = function (btn, direction) {
+    var row = btn.closest('.workflow-row');
+    var sibling = direction < 0 ? row.previousElementSibling : row.nextElementSibling;
+    if (!sibling) return;
+    if (direction < 0) row.parentNode.insertBefore(row, sibling);
+    else row.parentNode.insertBefore(sibling, row);
+  };
+
+  window.saveWorkflow = async function () {
+    var status = document.getElementById('save-status');
+    status.textContent = 'Saving…';
+    status.className = 'text-xs text-gray-500';
+    var rows = document.querySelectorAll('.workflow-row');
+    var columns = [];
+    var seenIds = new Set();
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var name = row.querySelector('.wf-name').value.trim();
+      if (!name) {
+        status.textContent = 'Row ' + (i + 1) + ' needs a name.';
+        status.className = 'text-xs text-red-400';
+        return;
+      }
+      var isExisting = row.getAttribute('data-is-existing') === '1';
+      var columnId = isExisting
+        ? row.querySelector('.wf-id').textContent
+        : slugify(name);
+      if (!columnId) {
+        status.textContent = 'Row ' + (i + 1) + ' name must include letters/numbers.';
+        status.className = 'text-xs text-red-400';
+        return;
+      }
+      if (seenIds.has(columnId)) {
+        status.textContent = 'Duplicate column id: ' + columnId + ' — rename to make it unique.';
+        status.className = 'text-xs text-red-400';
+        return;
+      }
+      seenIds.add(columnId);
+      var agent = row.querySelector('.wf-agent').value;
+      columns.push({
+        column_id: columnId,
+        name: name,
+        agent_type_id: agent === '' ? null : agent,
+        order: i,
+      });
+    }
+
+    try {
+      var res = await fetch('/api/projects/{{project.id}}/workflow', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ columns: columns }),
+      });
+      if (res.ok) {
+        status.textContent = 'Saved.';
+        status.className = 'text-xs text-green-400';
+        // Mark all current rows as existing so removal prompts fire correctly next time.
+        document.querySelectorAll('.workflow-row').forEach(function (r) {
+          r.setAttribute('data-is-existing', '1');
+          var idSpan = r.querySelector('.wf-id');
+          if (idSpan.textContent === '(auto)') {
+            var name = r.querySelector('.wf-name').value.trim();
+            idSpan.textContent = slugify(name);
+          }
+        });
+      } else {
+        var err = await res.json();
+        var msg = err.error || 'Save failed';
+        if (err.columns) msg += ' — ' + err.columns.map(function (c) { return c.column + ' (' + c.c + ')'; }).join(', ');
+        status.textContent = msg;
+        status.className = 'text-xs text-red-400';
+      }
+    } catch (e) {
+      status.textContent = 'Save failed: ' + e.message;
+      status.className = 'text-xs text-red-400';
+    }
+  };
+
+  function slugify(s) {
+    return s.toLowerCase()
+      .replace(/[^a-z0-9-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .replace(/-+/g, '-')
+      .slice(0, 50);
+  }
+
+  function buildAgentSelectHtml() {
+    var html = '<select class="wf-agent bg-navy-950 border border-navy-700 rounded px-2 py-1 text-sm text-gray-200 w-48">';
+    html += '<option value="">\u2014 no agent (human) \u2014</option>';
+    for (var i = 0; i < agentChoices.length; i++) {
+      html += '<option value="' + escapeHtml(agentChoices[i].id) + '">' + escapeHtml(agentChoices[i].name) + ' (' + escapeHtml(agentChoices[i].scopeLabel) + ')</option>';
+    }
+    html += '</select>';
+    return html;
+  }
+
+  function escapeHtml(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+})();
+</script>
+{{/if}}

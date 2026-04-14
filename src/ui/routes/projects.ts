@@ -2,7 +2,15 @@ import type { FastifyInstance } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
 import { listProjects, getProject } from '../../db/queries/projects.js';
-import { listProjectTypes } from '../../db/queries/project-types.js';
+import {
+  getProjectType,
+  getProjectTypeForProject,
+  listProjectTypes,
+} from '../../db/queries/project-types.js';
+import {
+  listAgentTypes,
+  listAgentTypesForProject,
+} from '../../db/queries/agent-types.js';
 import { discoverProjects, folderDisplayName } from '../../daemon/discovery.js';
 import { getInboxCount } from './helpers.js';
 import { getTicketStatuses } from '../../db/queries/agent-runs.js';
@@ -109,6 +117,64 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
       ],
       project,
       columns: boardColumns,
+    });
+  });
+
+  // GET /ui/projects/:id/workflow — column + agent editor for a project.
+  //
+  // Shows the project's private project_type (cloned from its template at
+  // registration) and lets the user add / remove / rename / reorder columns
+  // and assign an agent per column. Legacy projects that still point at a
+  // shared library type get a "re-register to customize" message.
+  app.get<{ Params: { id: string } }>('/ui/projects/:id/workflow', async (request, reply) => {
+    const { id } = uuidParam.parse(request.params);
+    const project = getProject(db, id);
+    if (!project) return reply.status(404).send('Project not found');
+
+    const workflow = getProjectTypeForProject(db, id);
+    // Legacy: project was registered before migration 003 and still points
+    // at a shared library template. Don't let the user edit the library.
+    const isLegacy = workflow === null;
+    const legacyLibraryType = isLegacy ? getProjectType(db, project.project_type_id) : null;
+
+    const library = listAgentTypes(db); // owner IS NULL
+    const forked = listAgentTypesForProject(db, id); // owner = this project
+
+    // Build one flat agent list with a scope label for the dropdown.
+    const agentChoices = [
+      ...forked.map((a) => ({
+        id: a.id,
+        name: a.name,
+        scope: 'project',
+        scopeLabel: 'project',
+      })),
+      ...library.map((a) => ({
+        id: a.id,
+        name: a.name,
+        scope: 'library',
+        scopeLabel: a.is_builtin ? 'built-in' : 'library',
+      })),
+    ];
+
+    return reply.view('workflow.hbs', {
+      activePage: 'projects',
+      pageTitle: `${project.name} — Workflow`,
+      inboxCount: getInboxCount(db) || undefined,
+      breadcrumbs: [
+        { label: 'Projects', href: '/ui/projects' },
+        { label: project.name, href: `/ui/projects/${project.id}` },
+        { label: 'Workflow', href: `/ui/projects/${project.id}/workflow` },
+      ],
+      project,
+      workflow,
+      isLegacy,
+      legacyLibraryType,
+      agentChoices,
+      // Escape </ to <\/ so the embedded JSON can't break out of the
+      // enclosing <script> tag even if an agent's name contains '</script>'.
+      // The page uses {{{ }}} to inject this as raw HTML inside a
+      // <script type="application/json"> block; parsed by JSON.parse at runtime.
+      agentChoicesJson: JSON.stringify(agentChoices).replace(/<\/(script)/gi, '<\\/$1'),
     });
   });
 }
