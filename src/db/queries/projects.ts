@@ -115,23 +115,11 @@ export function updateProject(
 }
 
 export function archiveProject(db: Database, id: string): boolean {
-  // Mangle the path alongside the status flip so the UNIQUE constraint on
-  // projects.path doesn't block re-registration of the same folder. The
-  // suffix is '::archived::<id>', which is guaranteed unique per row and
-  // visibly indicates tombstone state to anyone inspecting the DB directly.
-  // (Ticket #08cec285. Migration 004 applied the same rename to existing
-  //  archived rows.)
-  const now = Date.now();
+  // Just flip status. The partial unique index on projects.path excludes
+  // archived rows, so the folder can be re-registered without collision.
   const result = db
-    .prepare(
-      `UPDATE projects
-       SET status = 'archived',
-           path = CASE WHEN path LIKE '%::archived::%' THEN path
-                       ELSE path || '::archived::' || id END,
-           updated_at = ?
-       WHERE id = ?`,
-    )
-    .run(now, id);
+    .prepare("UPDATE projects SET status = 'archived', updated_at = ? WHERE id = ?")
+    .run(Date.now(), id);
   return result.changes > 0;
 }
 

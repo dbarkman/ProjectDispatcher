@@ -63,10 +63,13 @@ CREATE TABLE project_type_columns (
 );
 
 -- Projects: folders under ~/Development/ (or any absolute path).
+-- Path uniqueness is enforced by a *partial* unique index below rather than
+-- a column-level UNIQUE constraint. Archived projects don't own their path,
+-- so you can re-register the same folder after archiving without collision.
 CREATE TABLE projects (
   id TEXT PRIMARY KEY,              -- UUID
   name TEXT NOT NULL,
-  path TEXT NOT NULL UNIQUE,
+  path TEXT NOT NULL,
   project_type_id TEXT NOT NULL REFERENCES project_types(id),
   status TEXT NOT NULL DEFAULT 'active'
     CHECK (status IN ('active', 'dormant', 'missing', 'archived')),
@@ -74,6 +77,11 @@ CREATE TABLE projects (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
+
+-- Unique-among-active path index. Archived rows are excluded, so the same
+-- folder can be re-registered after archive without a UNIQUE violation.
+CREATE UNIQUE INDEX idx_projects_path_active
+  ON projects (path) WHERE status != 'archived';
 
 -- Heartbeat state per project (split from projects for clarity).
 CREATE TABLE project_heartbeats (

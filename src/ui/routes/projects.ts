@@ -3,7 +3,6 @@ import type { Database } from 'better-sqlite3';
 import { z } from 'zod';
 import { listProjects, getProject } from '../../db/queries/projects.js';
 import {
-  getProjectType,
   getProjectTypeForProject,
   listProjectTypes,
 } from '../../db/queries/project-types.js';
@@ -132,10 +131,12 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
     if (!project) return reply.status(404).send('Project not found');
 
     const workflow = getProjectTypeForProject(db, id);
-    // Legacy: project was registered before migration 003 and still points
-    // at a shared library template. Don't let the user edit the library.
-    const isLegacy = workflow === null;
-    const legacyLibraryType = isLegacy ? getProjectType(db, project.project_type_id) : null;
+    if (!workflow) {
+      // Should never happen for a project created via the API — registration
+      // always clones a scoped project_type. Fail loud so a broken row is
+      // visible instead of silently rendering an editor with no columns.
+      return reply.status(500).send('Project workflow state is inconsistent.');
+    }
 
     const library = listAgentTypes(db); // owner IS NULL
     const forked = listAgentTypesForProject(db, id); // owner = this project
@@ -167,8 +168,6 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
       ],
       project,
       workflow,
-      isLegacy,
-      legacyLibraryType,
       agentChoices,
       // Aggressively escape every '<' to its Unicode form. Defends against:
       //   - </script> breaking out of the <script> tag,

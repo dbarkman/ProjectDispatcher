@@ -123,11 +123,6 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
     const project = getProject(db, id);
     if (!project) return reply.status(404).send({ error: 'Project not found' });
     const state = describeProjectWorkflowState(db, project);
-    if (state === 'legacy') {
-      return reply
-        .status(409)
-        .send({ error: 'Project uses a legacy shared template; re-register to customize.' });
-    }
     if (state === 'broken') {
       return reply
         .status(500)
@@ -146,11 +141,6 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
     const project = getProject(db, id);
     if (!project) return reply.status(404).send({ error: 'Project not found' });
     const state = describeProjectWorkflowState(db, project);
-    if (state === 'legacy') {
-      return reply
-        .status(409)
-        .send({ error: 'Project uses a legacy shared template; re-register to customize.' });
-    }
     if (state === 'broken') {
       return reply
         .status(500)
