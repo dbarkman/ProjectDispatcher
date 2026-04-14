@@ -89,7 +89,8 @@ describe('Projects API', () => {
 
   it('allows re-registering the path of an archived project', async () => {
     // Register, archive, re-register same path — should succeed with 201.
-    // Archived rows don't own their path. (Ticket #08cec285.)
+    // Archived rows are excluded from the partial unique index on
+    // projects.path, so the folder is available again after archive.
     const first = await app.inject({
       method: 'POST',
       url: '/api/projects',

@@ -77,10 +77,11 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
       }
     }
 
-    // Verify path is not already registered by an *active* project. Archived
-    // rows don't own their path — archiving is the "let me re-register this
-    // folder fresh" escape hatch, so the same path must be available again.
-    // (Ticket #08cec285.)
+    // Pre-check: only an *active* project claims a path. Archived rows
+    // don't, so the same folder can be re-registered after archive. The
+    // partial unique index on projects.path is the authoritative enforcement;
+    // this pre-check exists to return a clean 409 with a useful error
+    // message instead of surfacing a raw SQLite UNIQUE violation as 500.
     const pathExists = db
       .prepare("SELECT 1 FROM projects WHERE path = ? AND status != 'archived'")
       .get(body.path);

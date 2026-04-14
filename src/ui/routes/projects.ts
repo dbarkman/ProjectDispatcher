@@ -123,8 +123,9 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
   //
   // Shows the project's private project_type (cloned from its template at
   // registration) and lets the user add / remove / rename / reorder columns
-  // and assign an agent per column. Legacy projects that still point at a
-  // shared library type get a "re-register to customize" message.
+  // and assign an agent per column. Returns 500 if the project's scoped
+  // project_type is missing (a broken invariant — only possible via direct
+  // DB manipulation, never via the API).
   app.get<{ Params: { id: string } }>('/ui/projects/:id/workflow', async (request, reply) => {
     const { id } = uuidParam.parse(request.params);
     const project = getProject(db, id);

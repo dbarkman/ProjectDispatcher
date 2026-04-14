@@ -14,14 +14,10 @@
 -- Library templates remain discoverable on the registration picker.
 -- Project-scoped rows are filtered out of the library view.
 --
--- Backward compatibility: existing projects created before this migration
--- still point at a library project_type (is_builtin=1, owner_project_id NULL).
--- Those projects are treated as *legacy* by the workflow editor — read still
--- works (board, tickets), but editing the workflow is refused with a 409
--- until the project is re-registered. This avoids the footgun of letting
--- one project's column edits bleed into every other project using the
--- same library template. No data-migration backfill is done, and none is
--- needed: re-registering a legacy folder clones the template cleanly.
+-- Every project created through the API gets a scoped project_type cloned
+-- from the chosen template. No legacy/shared-template fallback is supported;
+-- a project with no scoped project_type is considered broken and surfaced
+-- as a 500 by the workflow routes.
 
 ALTER TABLE project_types ADD COLUMN owner_project_id TEXT
   REFERENCES projects(id) ON DELETE CASCADE;

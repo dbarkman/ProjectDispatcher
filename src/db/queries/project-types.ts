@@ -50,9 +50,9 @@ export function listProjectTypes(db: Database): ProjectType[] {
 
 /**
  * Get the project_type for a specific project — the project-scoped copy
- * that was cloned at registration. Returns null if the project doesn't
- * own any project_type (pre-migration-003 legacy project still pointing
- * at a shared library template).
+ * that was cloned at registration. Returns null only in a 'broken' state
+ * (no scoped row exists); callers should treat null as a hard error since
+ * every API-created project owns a scoped project_type.
  */
 export function getProjectTypeForProject(
   db: Database,
