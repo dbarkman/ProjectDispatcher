@@ -12,6 +12,7 @@ import {
 import {
   cloneProjectType,
   createEmptyProjectType,
+  describeProjectWorkflowState,
   getProjectTypeForProject,
   setProjectTypeOwner,
   updateProjectType,
@@ -20,7 +21,10 @@ import {
   cloneAgentTypeForProject,
   getAgentType,
 } from '../../db/queries/agent-types.js';
-import { readPromptFile, writePromptFile } from '../../services/prompt-file.js';
+import {
+  readPromptFileByName,
+  writePromptFile,
+} from '../../services/prompt-file.js';
 import { z } from 'zod';
 import {
   createProjectBody,
@@ -113,15 +117,19 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
     const { id } = idParam.parse(request.params);
     const project = getProject(db, id);
     if (!project) return reply.status(404).send({ error: 'Project not found' });
-    const workflow = getProjectTypeForProject(db, id);
-    if (!workflow) {
-      // Legacy project created before migration 003 — still points at a
-      // shared library template. Surface the state explicitly instead of
-      // lying with a 404.
+    const state = describeProjectWorkflowState(db, project);
+    if (state === 'legacy') {
       return reply
         .status(409)
         .send({ error: 'Project uses a legacy shared template; re-register to customize.' });
     }
+    if (state === 'broken') {
+      return reply
+        .status(500)
+        .send({ error: 'Project workflow state is inconsistent. Contact an admin.' });
+    }
+    const workflow = getProjectTypeForProject(db, id);
+    // state==='scoped' guarantees getProjectTypeForProject returns a row.
     return workflow;
   });
 
@@ -132,12 +140,18 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
     const body = updateProjectWorkflowBody.parse(request.body);
     const project = getProject(db, id);
     if (!project) return reply.status(404).send({ error: 'Project not found' });
-    const workflow = getProjectTypeForProject(db, id);
-    if (!workflow) {
+    const state = describeProjectWorkflowState(db, project);
+    if (state === 'legacy') {
       return reply
         .status(409)
         .send({ error: 'Project uses a legacy shared template; re-register to customize.' });
     }
+    if (state === 'broken') {
+      return reply
+        .status(500)
+        .send({ error: 'Project workflow state is inconsistent. Contact an admin.' });
+    }
+    const workflow = getProjectTypeForProject(db, id)!;
 
     // Refuse to remove any column that still holds tickets. Prevents
     // orphaned tickets pinned to a non-existent column.
@@ -163,18 +177,29 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
     }
 
     // Verify every referenced agent_type exists and is either library or
-    // owned by this project. Prevents leaking another project's agents.
-    for (const col of body.columns) {
-      if (!col.agent_type_id) continue;
-      const agent = db
+    // owned by this project — single query (was N+1 per review M-01).
+    const referencedAgentIds = [
+      ...new Set(
+        body.columns
+          .map((c) => c.agent_type_id)
+          .filter((v): v is string => typeof v === 'string' && v.length > 0),
+      ),
+    ];
+    if (referencedAgentIds.length > 0) {
+      const placeholders = referencedAgentIds.map(() => '?').join(',');
+      const rows = db
         .prepare(
-          `SELECT owner_project_id FROM agent_types
-           WHERE id = ? AND (owner_project_id IS NULL OR owner_project_id = ?)`,
+          `SELECT id FROM agent_types
+           WHERE id IN (${placeholders})
+             AND (owner_project_id IS NULL OR owner_project_id = ?)`,
         )
-        .get(col.agent_type_id, project.id);
-      if (!agent) {
+        .all(...referencedAgentIds, project.id) as Array<{ id: string }>;
+      const foundIds = new Set(rows.map((r) => r.id));
+      const invalid = referencedAgentIds.filter((id) => !foundIds.has(id));
+      if (invalid.length > 0) {
         return reply.status(400).send({
-          error: `Unknown or out-of-scope agent: ${col.agent_type_id}`,
+          error: `Unknown or out-of-scope agent: ${invalid[0]}`,
+          invalid,
         });
       }
     }
@@ -189,11 +214,19 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
     const body = updateProjectBody.parse(request.body);
 
     if (body.project_type_id) {
-      const typeExists = db
-        .prepare('SELECT 1 FROM project_types WHERE id = ?')
-        .get(body.project_type_id);
-      if (!typeExists) {
-        return reply.status(400).send({ error: `Unknown project type: ${body.project_type_id}` });
+      // Defense-in-depth: a project can only repoint at a library template
+      // (owner_project_id IS NULL) or its own existing scoped type. Prevents
+      // pointing at another project's private type. (Review M-03.)
+      const target = db
+        .prepare(
+          `SELECT owner_project_id FROM project_types
+           WHERE id = ? AND (owner_project_id IS NULL OR owner_project_id = ?)`,
+        )
+        .get(body.project_type_id, id);
+      if (!target) {
+        return reply
+          .status(400)
+          .send({ error: `Unknown or out-of-scope project type: ${body.project_type_id}` });
       }
     }
 
@@ -230,8 +263,10 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
     async (request, reply) => {
       const { id } = idParam.parse(request.params);
       const body = z.object({
-        agent_type_id: z.string().min(1),
-        column_id: z.string().min(1).optional(),
+        // Same charset constraint as other agent_type_id references — length
+        // bounded so obvious junk is rejected cheaply before any DB lookup.
+        agent_type_id: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/),
+        column_id: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/).optional(),
       }).parse(request.body);
 
       const project = getProject(db, id);
@@ -244,54 +279,57 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
         });
       }
 
-      // Read the library prompt first — if this fails we haven't changed any
-      // state yet. Missing prompt file = empty fork; agent detail page will
-      // let the user write new content.
+      // Read the library prompt from its *actual* stored path — not
+      // `${id}.md`, which was coincidentally right for built-ins but wrong
+      // for any user-created library agent whose prompt file doesn't match
+      // the slug convention. (Review #N1 C-1 / security M-01.)
+      //
+      // ENOENT is treated as "blank prompt" so a library agent with no
+      // prompt file still clones gracefully; any other error aborts the
+      // fork before we touch the DB.
       let promptContent = '';
       try {
-        promptContent = await readPromptFile(body.agent_type_id);
+        promptContent = await readPromptFileByName(libAgent.system_prompt_path);
       } catch (err) {
         if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
-          request.log.warn({ err }, 'Failed to read library prompt during fork');
+          request.log.error({ err }, 'Failed to read library prompt during fork');
+          return reply.status(500).send({ error: 'Failed to read library prompt' });
         }
       }
 
-      // DB transaction: clone the agent_type row + rebind the column if
-      // requested. Both succeed or neither does.
-      const forked = db.transaction(() => {
+      // Step 1: DB clone + optional column rebind, in one transaction.
+      const clone = db.transaction(() => {
         const workflow = getProjectTypeForProject(db, id);
-        const fork = cloneAgentTypeForProject(db, body.agent_type_id, project.id);
-        // Rewrite the fork's prompt path to a unique file based on its UUID id,
-        // so editing the fork's prompt won't touch the library file.
-        const newPromptFilename = `${fork.id}.md`;
-        db.prepare(
-          'UPDATE agent_types SET system_prompt_path = ?, updated_at = ? WHERE id = ?',
-        ).run(newPromptFilename, Date.now(), fork.id);
-
+        const result = cloneAgentTypeForProject(db, body.agent_type_id, project.id);
         if (body.column_id && workflow) {
           const col = workflow.columns.find((c) => c.column_id === body.column_id);
           if (col) {
             db.prepare(
               `UPDATE project_type_columns SET agent_type_id = ?
                WHERE project_type_id = ? AND column_id = ?`,
-            ).run(fork.id, workflow.id, body.column_id);
+            ).run(result.agent.id, workflow.id, body.column_id);
           }
         }
-        return fork;
+        return result;
       })();
 
-      // Write the fork's prompt file *after* the DB transaction commits.
-      // If this write fails, the fork exists in DB with an empty prompt;
-      // the user can edit it on the agent detail page. (Same DB-first-then-file
-      // pattern as POST /api/agent-types per Review #5 F-05.)
+      // Step 2: write the fork's prompt file. If this fails, roll back the
+      // DB clone so the user doesn't end up with a visible-but-broken fork.
+      // The reviewer (H-1) correctly pushed back on the earlier log-and-shrug
+      // behavior: a fork that silently has no prompt is worse than a loud
+      // failure. (Review #N1 H-1 / security L-02.)
       try {
-        await writePromptFile(forked.id, promptContent);
+        await writePromptFile(clone.agent.id, promptContent);
       } catch (err) {
-        request.log.warn({ err }, 'Fork DB commit succeeded but prompt file write failed');
+        request.log.error({ err }, 'Fork prompt file write failed; rolling back DB clone');
+        db.transaction(() => {
+          db.prepare('DELETE FROM agent_types WHERE id = ?').run(clone.agent.id);
+        })();
+        return reply.status(500).send({ error: 'Failed to write fork prompt file' });
       }
 
       return reply.status(201).send({
-        forked_agent_type_id: forked.id,
+        forked_agent_type_id: clone.agent.id,
         column_id: body.column_id,
       });
     },

@@ -41,7 +41,11 @@
       <div class="flex-1">
         <input type="text" class="wf-name w-full bg-navy-950 border border-navy-700 rounded px-2 py-1 text-sm text-gray-200"
           value="{{this.name}}" placeholder="Column name">
-        <p class="text-[10px] text-gray-600 mt-1 font-mono">id: <span class="wf-id">{{this.column_id}}</span></p>
+        <!-- Hidden input holds the authoritative column_id for persisted rows.
+             Displayed copy below is purely informational — never read back to
+             drive the save payload. -->
+        <input type="hidden" class="wf-id-value" value="{{this.column_id}}">
+        <p class="text-[10px] text-gray-600 mt-1 font-mono">id: <span class="wf-id-display">{{this.column_id}}</span></p>
       </div>
       <select class="wf-agent bg-navy-950 border border-navy-700 rounded px-2 py-1 text-sm text-gray-200 w-48"
               data-selected="{{this.agent_type_id}}">
@@ -109,7 +113,9 @@
       '</div>' +
       '<div class="flex-1">' +
         '<input type="text" class="wf-name w-full bg-navy-950 border border-navy-700 rounded px-2 py-1 text-sm text-gray-200" placeholder="Column name">' +
-        '<p class="text-[10px] text-gray-600 mt-1 font-mono">id: <span class="wf-id">(auto)</span></p>' +
+        // Empty hidden input + "auto" display — populated on save.
+        '<input type="hidden" class="wf-id-value" value="">' +
+        '<p class="text-[10px] text-gray-600 mt-1 font-mono">id: <span class="wf-id-display">(auto)</span></p>' +
       '</div>' +
       buildAgentSelectHtml() +
       '<div class="wf-agent-controls flex gap-1"></div>' +
@@ -126,10 +132,15 @@
   window.removeRow = function (btn) {
     var row = btn.closest('.workflow-row');
     if (row.getAttribute('data-is-existing') === '1') {
-      if (!confirm('Remove this column?\n\nTickets currently in this column will block the save. Move them first if any exist.')) {
+      if (!confirm(
+        'Remove this column?\n\n' +
+        'If any tickets are currently in this column, the save will be rejected ' +
+        'until you move them to another column first.'
+      )) {
         return;
       }
     }
+    // Newly-added rows just vanish — nothing persisted yet, no tickets possible.
     row.remove();
   };
 
@@ -156,10 +167,11 @@
         status.className = 'text-xs text-red-400';
         return;
       }
-      var isExisting = row.getAttribute('data-is-existing') === '1';
-      var columnId = isExisting
-        ? row.querySelector('.wf-id').textContent
-        : slugify(name);
+      // Prefer the hidden input holding the persisted id; fall back to
+      // slugifying the name for newly-added rows whose hidden value is empty.
+      var hidden = row.querySelector('.wf-id-value');
+      var existingId = hidden ? hidden.value : '';
+      var columnId = existingId ? existingId : slugify(name);
       if (!columnId) {
         status.textContent = 'Row ' + (i + 1) + ' name must include letters/numbers.';
         status.className = 'text-xs text-red-400';
@@ -189,14 +201,18 @@
       if (res.ok) {
         status.textContent = 'Saved.';
         status.className = 'text-xs text-green-400';
-        // Mark all current rows as existing so removal prompts fire correctly next time.
+        // Promote newly-added rows to 'existing' so future edits route
+        // through the right branches (confirm on remove, hidden id used
+        // on save). Backfill the hidden id + display from the current name.
         document.querySelectorAll('.workflow-row').forEach(function (r) {
-          r.setAttribute('data-is-existing', '1');
-          var idSpan = r.querySelector('.wf-id');
-          if (idSpan.textContent === '(auto)') {
-            var name = r.querySelector('.wf-name').value.trim();
-            idSpan.textContent = slugify(name);
+          var hiddenInput = r.querySelector('.wf-id-value');
+          if (hiddenInput && !hiddenInput.value) {
+            var newId = slugify(r.querySelector('.wf-name').value.trim());
+            hiddenInput.value = newId;
+            var display = r.querySelector('.wf-id-display');
+            if (display) display.textContent = newId;
           }
+          r.setAttribute('data-is-existing', '1');
         });
       } else {
         var err = await res.json();
@@ -272,8 +288,8 @@
   async function forkAgent(row, agentId) {
     var columnId = null;
     if (row.getAttribute('data-is-existing') === '1') {
-      var idEl = row.querySelector('.wf-id');
-      columnId = idEl ? idEl.textContent : null;
+      var hidden = row.querySelector('.wf-id-value');
+      columnId = hidden && hidden.value ? hidden.value : null;
     }
     if (!confirm('Create a project-scoped copy of this agent? You can edit its prompt and model without affecting the library.')) {
       return;

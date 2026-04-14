@@ -170,11 +170,15 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
       isLegacy,
       legacyLibraryType,
       agentChoices,
-      // Escape </ to <\/ so the embedded JSON can't break out of the
-      // enclosing <script> tag even if an agent's name contains '</script>'.
-      // The page uses {{{ }}} to inject this as raw HTML inside a
-      // <script type="application/json"> block; parsed by JSON.parse at runtime.
-      agentChoicesJson: JSON.stringify(agentChoices).replace(/<\/(script)/gi, '<\\/$1'),
+      // Aggressively escape every '<' to its Unicode form. Defends against:
+      //   - </script> breaking out of the <script> tag,
+      //   - <!-- / <script driving the tokenizer into script-data-*-escaped
+      //     state even inside type="application/json" (reviewer M-04, sec L-01),
+      //   - any future HTML-parser quirk.
+      // JSON.parse handles '\u003C' identically to '<', so runtime behavior
+      // is unchanged. The page uses {{{ }}} to inject this as raw HTML inside
+      // a <script type="application/json"> block.
+      agentChoicesJson: JSON.stringify(agentChoices).replace(/</g, '\\u003C'),
     });
   });
 }

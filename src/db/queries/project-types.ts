@@ -49,8 +49,10 @@ export function listProjectTypes(db: Database): ProjectType[] {
 }
 
 /**
- * Get the project_type for a specific project. Each project owns a private
- * copy after registration; listProjectTypes filters these out of the library.
+ * Get the project_type for a specific project — the project-scoped copy
+ * that was cloned at registration. Returns null if the project doesn't
+ * own any project_type (pre-migration-003 legacy project still pointing
+ * at a shared library template).
  */
 export function getProjectTypeForProject(
   db: Database,
@@ -64,6 +66,32 @@ export function getProjectTypeForProject(
     .prepare('SELECT * FROM project_type_columns WHERE project_type_id = ? ORDER BY "order"')
     .all(pt.id) as ProjectTypeColumn[];
   return { ...pt, columns };
+}
+
+/**
+ * Classify a project's workflow state.
+ *   - 'scoped': the project has its own project_type clone (post-migration).
+ *   - 'legacy': the project points at a library template (pre-migration-003).
+ *     Safe to read — editing is refused to avoid mutating the shared library.
+ *   - 'broken': the project's project_type_id doesn't resolve to anything.
+ *     Should only happen if a row was hand-edited; never produced by the API.
+ */
+export function describeProjectWorkflowState(
+  db: Database,
+  project: { id: string; project_type_id: string },
+): 'scoped' | 'legacy' | 'broken' {
+  const scoped = db
+    .prepare('SELECT 1 FROM project_types WHERE owner_project_id = ? LIMIT 1')
+    .get(project.id);
+  if (scoped) return 'scoped';
+  const referenced = db
+    .prepare('SELECT owner_project_id FROM project_types WHERE id = ?')
+    .get(project.project_type_id) as { owner_project_id: string | null } | undefined;
+  if (!referenced) return 'broken';
+  // Library templates have owner_project_id = NULL. Anything else means the
+  // project points at *another* project's scoped type, which we also treat
+  // as 'broken' — never a valid state.
+  return referenced.owner_project_id === null ? 'legacy' : 'broken';
 }
 
 /**

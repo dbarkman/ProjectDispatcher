@@ -62,21 +62,24 @@ export function listAgentTypesForProject(db: Database, projectId: string): Agent
 }
 
 /**
- * Clone a library agent into a project-scoped copy. The original prompt file
- * path is reused by default — the fork starts with identical behavior until
- * the user edits the copy. If the caller wants a separate prompt file,
- * pass newPromptPath.
+ * Clone a library agent into a project-scoped copy. The fork gets a fresh
+ * `system_prompt_path` named `<fork-uuid>.md` so prompt edits never touch
+ * the library's prompt file. Caller is responsible for writing content to
+ * that file (see fork route for the read-library-then-write-fork flow).
+ *
+ * Returns the new row's id and the prompt filename it expects on disk, so
+ * callers don't need to re-derive the convention.
  */
 export function cloneAgentTypeForProject(
   db: Database,
   templateId: string,
   ownerProjectId: string,
-  newPromptPath?: string,
-): AgentType {
+): { agent: AgentType; templateSystemPromptPath: string; forkSystemPromptPath: string } {
   const template = getAgentType(db, templateId);
   if (!template) throw new Error(`Agent template not found: ${templateId}`);
   const now = Date.now();
   const newId = randomUUID();
+  const forkPath = `${newId}.md`;
   db.prepare(
     `INSERT INTO agent_types (
       id, name, description, system_prompt_path, model, allowed_tools,
@@ -87,7 +90,7 @@ export function cloneAgentTypeForProject(
     newId,
     template.name,
     template.description,
-    newPromptPath ?? template.system_prompt_path,
+    forkPath,
     template.model,
     template.allowed_tools,
     template.permission_mode,
@@ -97,7 +100,11 @@ export function cloneAgentTypeForProject(
     now,
     now,
   );
-  return getAgentType(db, newId)!;
+  return {
+    agent: getAgentType(db, newId)!,
+    templateSystemPromptPath: template.system_prompt_path,
+    forkSystemPromptPath: forkPath,
+  };
 }
 
 export function getAgentType(db: Database, id: string): AgentType | null {

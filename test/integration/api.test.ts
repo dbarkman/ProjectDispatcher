@@ -354,6 +354,18 @@ describe('Project Workflow API (per-project templates)', () => {
     expect(libAfter.system_prompt_path).toBe(libraryCodingAgent.system_prompt_path);
   });
 
+  it('PUT workflow rejects duplicate column_id / order', async () => {
+    const wf = (await app.inject({ method: 'GET', url: `/api/projects/${projectId}/workflow` })).json();
+    const dupCols = [...wf.columns, { ...wf.columns[0], order: 99 }];
+    const res = await app.inject({
+      method: 'PUT',
+      url: `/api/projects/${projectId}/workflow`,
+      payload: { columns: dupCols },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error).toBe('Validation failed');
+  });
+
   it('fork rejects forking a project-scoped agent (only library agents are forkable)', async () => {
     const firstFork = await app.inject({
       method: 'POST',

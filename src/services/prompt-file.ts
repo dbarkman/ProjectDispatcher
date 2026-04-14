@@ -31,9 +31,23 @@ export function resolvePromptPath(filename: string): string {
  * Read a prompt file by agent type ID. Returns the file content as a
  * string. Throws if the file doesn't exist (ENOENT) or the path is
  * invalid.
+ *
+ * Convenience wrapper — assumes the file is named `${agentTypeId}.md`.
+ * Callers that have the actual `system_prompt_path` (e.g. fork flow)
+ * should use `readPromptFileByName` to avoid hardcoding the convention.
  */
 export async function readPromptFile(agentTypeId: string): Promise<string> {
-  const path = resolvePromptPath(`${agentTypeId}.md`);
+  return readPromptFileByName(`${agentTypeId}.md`);
+}
+
+/**
+ * Read a prompt file by its stored filename (system_prompt_path).
+ * Use this when an agent_type's prompt path might not match `${id}.md`
+ * — e.g. user-created library agents whose filename was chosen freely,
+ * or a fork operation that needs to clone from the template's real path.
+ */
+export async function readPromptFileByName(filename: string): Promise<string> {
+  const path = resolvePromptPath(filename);
   return readFile(path, 'utf8');
 }
 
