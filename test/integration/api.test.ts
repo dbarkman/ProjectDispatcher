@@ -87,6 +87,46 @@ describe('Projects API', () => {
     expect(dup.statusCode).toBe(409);
   });
 
+  it('allows re-registering the path of an archived project', async () => {
+    // Register, archive, re-register same path — should succeed with 201.
+    // Archived rows don't own their path. (Ticket #08cec285.)
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'Ephemeral', path: '/reuse-me', project_type_id: 'software-dev' },
+    });
+    expect(first.statusCode).toBe(201);
+    const archiveRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${first.json().id}`,
+    });
+    expect(archiveRes.statusCode).toBe(200);
+
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'Reborn', path: '/reuse-me', project_type_id: 'software-dev' },
+    });
+    expect(second.statusCode).toBe(201);
+    expect(second.json().id).not.toBe(first.json().id);
+    expect(second.json().status).toBe('active');
+  });
+
+  it('still rejects paths currently held by an active project', async () => {
+    await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'Holding', path: '/active-holder', project_type_id: 'software-dev' },
+    });
+    const clash = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'Rejected', path: '/active-holder', project_type_id: 'software-dev' },
+    });
+    expect(clash.statusCode).toBe(409);
+    expect(clash.json().error).toMatch(/already registered/i);
+  });
+
   it('rejects invalid input with 400', async () => {
     const res = await app.inject({
       method: 'POST',

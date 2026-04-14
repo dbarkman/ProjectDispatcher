@@ -75,6 +75,7 @@ describe('runMigrations', () => {
         '001_init.sql',
         '002_ticket_attachments.sql',
         '003_project_scoped_templates.sql',
+        '004_archive_path_rename.sql',
       ];
       expect(first.applied).toEqual(expectedMigrations);
       expect(first.skipped).toEqual([]);

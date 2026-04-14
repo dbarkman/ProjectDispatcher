@@ -23,7 +23,8 @@
     <h3 class="text-lg font-semibold text-gray-200 mb-1">Register Project</h3>
     <p id="register-folder-name" class="text-sm text-gray-400 mb-4"></p>
     <form hx-post="/api/projects" hx-ext="json-enc" hx-swap="none"
-          hx-on::after-request="if(event.detail.successful) location.reload()">
+          hx-on::before-request="document.getElementById('register-error').classList.add('hidden')"
+          hx-on::after-request="handleRegisterResponse(event)">
       <input type="hidden" id="register-path" name="path">
       <div class="mb-3">
         <label class="block text-xs text-gray-500 mb-1">Name</label>
@@ -54,6 +55,9 @@
           Cancel
         </button>
       </div>
+      <!-- Server-error slot. htmx hides this before each submit; the
+           after-request handler fills it from the response body on failure. -->
+      <div id="register-error" class="hidden mt-3 text-xs text-red-400"></div>
     </form>
   </div>
 </div>
@@ -63,7 +67,28 @@
     document.getElementById('register-name').value = name;
     document.getElementById('register-path').value = path;
     document.getElementById('register-folder-name').textContent = path;
+    document.getElementById('register-error').classList.add('hidden');
+    document.getElementById('register-error').textContent = '';
     document.getElementById('register-modal').classList.remove('hidden');
+  }
+
+  // Surface API errors in the modal instead of leaving it looking frozen
+  // after a failed submit. (Ticket #08cec285.)
+  function handleRegisterResponse(event) {
+    if (event.detail.successful) {
+      location.reload();
+      return;
+    }
+    var errorDiv = document.getElementById('register-error');
+    var message = 'Registration failed.';
+    try {
+      var body = JSON.parse(event.detail.xhr.responseText);
+      if (body && body.error) message = body.error;
+    } catch (e) {
+      // Non-JSON response — keep the generic message.
+    }
+    errorDiv.textContent = message;
+    errorDiv.classList.remove('hidden');
   }
 </script>
 {{/if}}

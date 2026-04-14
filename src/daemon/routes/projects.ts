@@ -77,8 +77,13 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
       }
     }
 
-    // Verify path is not already registered
-    const pathExists = db.prepare('SELECT 1 FROM projects WHERE path = ?').get(body.path);
+    // Verify path is not already registered by an *active* project. Archived
+    // rows don't own their path — archiving is the "let me re-register this
+    // folder fresh" escape hatch, so the same path must be available again.
+    // (Ticket #08cec285.)
+    const pathExists = db
+      .prepare("SELECT 1 FROM projects WHERE path = ? AND status != 'archived'")
+      .get(body.path);
     if (pathExists) {
       return reply.status(409).send({ error: `Path already registered: ${body.path}` });
     }
