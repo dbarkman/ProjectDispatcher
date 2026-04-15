@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { writeFile, mkdir, unlink } from 'node:fs/promises';
-import { createWriteStream } from 'node:fs';
+import { createWriteStream, existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -18,6 +18,27 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ARTIFACTS_DIR = join(DEFAULT_TASKS_DIR, 'artifacts', 'runs');
 
 const allowedToolsSchema = z.array(z.string().min(1));
+
+/**
+ * Pick the right command for spawning the MCP server.
+ *   - Prod (npm run build): dist/mcp/server.js exists; spawn `node` directly.
+ *     No tsx runtime needed in production install — keeps the dependency
+ *     surface tight (tsx stays in devDependencies).
+ *   - Dev (tsx-watch daemon): no dist; spawn via `npx tsx` against the .ts
+ *     source. Local node_modules/.bin is on PATH because the daemon was
+ *     launched via `npm run dev`, so npx finds tsx without a registry hit.
+ *
+ * Resolved once at module load (one sync existsSync at startup, before the
+ * server binds — same pattern as runMigrations sync I/O).
+ */
+function resolveMcpServerSpawn(): { command: string; args: string[] } {
+  const distPath = resolve(join(__dirname, '..', 'mcp', 'server.js'));
+  if (existsSync(distPath)) {
+    return { command: 'node', args: [distPath] };
+  }
+  const srcPath = resolve(join(__dirname, '..', 'mcp', 'server.ts'));
+  return { command: 'npx', args: ['tsx', srcPath] };
+}
 
 export interface AgentRunResult {
   runId: string;
@@ -139,19 +160,17 @@ export async function runAgent(
     mcpConfigPath = join(ARTIFACTS_DIR, `${runId}-mcp.json`);
     await mkdir(ARTIFACTS_DIR, { recursive: true });
 
-    // Resolve to .ts in source and spawn via tsx so the same path works in
-    // dev (tsx-watch daemon, no compiled output) and prod (npm run build
-    // emits dist/mcp/server.js but tsx still happily executes either).
-    // Earlier code pointed at server.js which only exists post-build, so
-    // dev-mode agents got "MCP tools not available" from a silent spawn
-    // failure. (Ticket #5e892a59.)
-    const mcpServerPath = resolve(join(__dirname, '..', 'mcp', 'server.ts'));
-
+    // Build the MCP server spawn config. Prefer the compiled JS in prod
+    // (no TS runtime needed) and fall back to tsx + .ts in dev where the
+    // tsx-watch daemon never emits dist/. Earlier code hardcoded server.js
+    // which doesn't exist in dev, so agents got "MCP tools not available"
+    // from a silent spawn failure. (Ticket #5e892a59.)
+    const spawnCmd = resolveMcpServerSpawn();
     const mcpConfig = {
       mcpServers: {
         dispatch: {
-          command: 'npx',
-          args: ['tsx', mcpServerPath],
+          command: spawnCmd.command,
+          args: spawnCmd.args,
           env: {
             DISPATCH_RUN_ID: runId,
             DISPATCH_TICKET_ID: ticketId,
