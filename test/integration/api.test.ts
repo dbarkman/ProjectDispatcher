@@ -465,6 +465,51 @@ describe('Agent Types API', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().length).toBe(9);
   });
+
+  it('PATCH coerces string-typed timeout_minutes from HTML form submissions', async () => {
+    // htmx + json-enc serializes <input type="number"> fields as strings.
+    // z.coerce.number() on the schema accepts this and applies .int().positive()
+    // after coercion. (Ticket #c1859f51.)
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/agent-types/coding-agent',
+      payload: {
+        name: 'Renamed Coding Agent',
+        timeout_minutes: '45', // string, the way the form sends it
+        max_retries: '2',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const updated = res.json();
+    expect(updated.name).toBe('Renamed Coding Agent');
+    expect(updated.timeout_minutes).toBe(45); // coerced to number before storage
+    expect(updated.max_retries).toBe(2);
+  });
+
+  it('PATCH still rejects non-numeric strings on timeout_minutes', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/agent-types/coding-agent',
+      payload: { timeout_minutes: 'abc' },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('PATCH still rejects negative or zero timeout_minutes', async () => {
+    const neg = await app.inject({
+      method: 'PATCH',
+      url: '/api/agent-types/coding-agent',
+      payload: { timeout_minutes: '-5' },
+    });
+    expect(neg.statusCode).toBe(400);
+
+    const zero = await app.inject({
+      method: 'PATCH',
+      url: '/api/agent-types/coding-agent',
+      payload: { timeout_minutes: '0' },
+    });
+    expect(zero.statusCode).toBe(400);
+  });
 });
 
 describe('Attachments API', () => {

@@ -19,6 +19,11 @@ const slugParam = z.object({
   id: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/, 'Must be a lowercase slug'),
 });
 
+// Note: z.coerce.number() on timeout_minutes / max_retries accepts both
+// JSON numbers (from programmatic callers + tests) and numeric strings
+// (from htmx-serialized HTML <input type="number"> forms, which always
+// send strings). The .int().positive() / .min(0) constraints apply
+// *after* coercion — "abc", "-5", "1.5" still rejected. (Ticket #c1859f51.)
 const createAgentTypeBody = z.object({
   id: z.string().min(1).max(50).regex(/^[a-z0-9-]+$/, 'Must be a lowercase slug'),
   name: z.string().min(1).max(200),
@@ -26,8 +31,8 @@ const createAgentTypeBody = z.object({
   model: z.string().min(1),
   allowed_tools: z.array(z.string()),
   permission_mode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan']),
-  timeout_minutes: z.number().int().positive().optional(),
-  max_retries: z.number().int().min(0).optional(),
+  timeout_minutes: z.coerce.number().int().positive().optional(),
+  max_retries: z.coerce.number().int().min(0).optional(),
   prompt_text: z.string().optional(), // If provided, written to <id>.md
 });
 
@@ -37,8 +42,8 @@ const updateAgentTypeBody = z.object({
   model: z.string().min(1).optional(),
   allowed_tools: z.array(z.string()).optional(),
   permission_mode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan']).optional(),
-  timeout_minutes: z.number().int().positive().optional(),
-  max_retries: z.number().int().min(0).optional(),
+  timeout_minutes: z.coerce.number().int().positive().optional(),
+  max_retries: z.coerce.number().int().min(0).optional(),
   prompt_text: z.string().optional(), // If provided, overwrites the prompt file
 });
 
