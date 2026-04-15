@@ -13,8 +13,14 @@ interface Ticket {
   tags: string | null;
   claimed_by_run_id: string | null;
   created_by: string;
+  sequence_number: number;
   created_at: number;
   updated_at: number;
+}
+
+interface ProjectSlim {
+  id: string;
+  abbreviation: string;
 }
 
 interface TicketComment {
@@ -32,6 +38,23 @@ interface TicketWithComments extends Ticket {
 
 function shortId(id: string): string {
   return id.slice(0, 8);
+}
+
+/**
+ * Build an id → abbreviation map by fetching all projects. Used to compose
+ * `<abbrev>-<seq>` display ids in CLI output. Cheap (one HTTP round-trip,
+ * tens of rows max for any realistic install) and avoids extending the
+ * /api/tickets response shape just for the CLI.
+ */
+async function loadProjectAbbreviations(): Promise<Map<string, string>> {
+  const projects = await api.get<ProjectSlim[]>('/api/projects');
+  return new Map(projects.map((p) => [p.id, p.abbreviation]));
+}
+
+function displayTicketId(t: { project_id: string; sequence_number: number }, abbrevs: Map<string, string>): string {
+  const abbr = abbrevs.get(t.project_id);
+  if (!abbr) return shortId(t.project_id); // missing project — fall back to UUID prefix
+  return `${abbr}-${t.sequence_number}`;
 }
 
 function relativeTime(timestamp: number): string {
@@ -85,7 +108,10 @@ export function registerTicketCommands(program: Command): void {
       if (opts.priority) params.set('priority', opts.priority);
       const query = params.toString() ? `?${params.toString()}` : '';
 
-      const data = await api.get<Ticket[]>(`/api/tickets${query}`);
+      const [data, abbrevs] = await Promise.all([
+        api.get<Ticket[]>(`/api/tickets${query}`),
+        loadProjectAbbreviations(),
+      ]);
 
       if (data.length === 0) {
         console.log(chalk.dim('No tickets found.'));
@@ -95,13 +121,13 @@ export function registerTicketCommands(program: Command): void {
       const table = new Table({
         head: ['ID', 'Title', 'Column', 'Priority', 'Age'],
         style: { head: ['cyan'] },
-        colWidths: [10, 40, 18, 10, 10],
+        colWidths: [12, 38, 18, 10, 10],
       });
 
       for (const t of data) {
         table.push([
-          chalk.dim(shortId(t.id)),
-          t.title.length > 37 ? t.title.slice(0, 37) + '...' : t.title,
+          chalk.dim(displayTicketId(t, abbrevs)),
+          t.title.length > 35 ? t.title.slice(0, 35) + '...' : t.title,
           t.column,
           priorityColor(t.priority),
           relativeTime(t.updated_at),
@@ -116,11 +142,14 @@ export function registerTicketCommands(program: Command): void {
     .command('show <id>')
     .description('Show ticket detail with full comment thread')
     .action(async (id: string) => {
-      const t = await api.get<TicketWithComments>(`/api/tickets/${id}`);
+      const [t, abbrevs] = await Promise.all([
+        api.get<TicketWithComments>(`/api/tickets/${id}`),
+        loadProjectAbbreviations(),
+      ]);
 
-      console.log(chalk.bold(t.title));
+      console.log(chalk.bold(`${displayTicketId(t, abbrevs)} — ${t.title}`));
       console.log(`  Column: ${t.column} | Priority: ${priorityColor(t.priority)} | Created: ${relativeTime(t.created_at)}`);
-      console.log(`  Project: ${chalk.dim(t.project_id)} | ID: ${chalk.dim(t.id)}`);
+      console.log(`  Project: ${chalk.dim(t.project_id)} | UUID: ${chalk.dim(t.id)}`);
       if (t.body) {
         console.log(`\n${t.body}`);
       }
@@ -213,7 +242,8 @@ export function registerTicketCommands(program: Command): void {
         column: opts.column,
         priority,
       });
-      console.log(chalk.green(`Ticket created: ${shortId(t.id)} "${t.title}" in column ${t.column}`));
+      const abbrevs = await loadProjectAbbreviations();
+      console.log(chalk.green(`Ticket created: ${displayTicketId(t, abbrevs)} "${t.title}" in column ${t.column}`));
     });
 
   // dispatch ticket comment <id> <text>
@@ -249,7 +279,10 @@ export function registerTicketCommands(program: Command): void {
     .command('inbox')
     .description('Show all tickets in human columns (your inbox)')
     .action(async () => {
-      const data = await api.get<Ticket[]>('/api/tickets?column=human');
+      const [data, abbrevs] = await Promise.all([
+        api.get<Ticket[]>('/api/tickets?column=human'),
+        loadProjectAbbreviations(),
+      ]);
 
       if (data.length === 0) {
         console.log(chalk.green('Inbox is empty — all clear!'));
@@ -261,13 +294,13 @@ export function registerTicketCommands(program: Command): void {
       const table = new Table({
         head: ['ID', 'Title', 'Priority', 'Age'],
         style: { head: ['cyan'] },
-        colWidths: [10, 50, 10, 10],
+        colWidths: [12, 48, 10, 10],
       });
 
       for (const t of data) {
         table.push([
-          chalk.dim(shortId(t.id)),
-          t.title.length > 47 ? t.title.slice(0, 47) + '...' : t.title,
+          chalk.dim(displayTicketId(t, abbrevs)),
+          t.title.length > 45 ? t.title.slice(0, 45) + '...' : t.title,
           priorityColor(t.priority),
           relativeTime(t.updated_at),
         ]);

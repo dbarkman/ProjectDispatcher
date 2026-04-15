@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { listProjects } from '../../db/queries/projects.js';
+import { formatTicketDisplayId } from '../../db/queries/abbreviation.js';
 
 interface InboxTicketRow {
   id: string;
@@ -29,7 +30,7 @@ export async function inboxRoutes(app: FastifyInstance, db: Database): Promise<v
 
     const ticketData = tickets.map((t) => ({
       ...t,
-      displayId: `${t.project_abbreviation}-${t.sequence_number}`,
+      displayId: formatTicketDisplayId(t.project_abbreviation, t.sequence_number),
       projectName: t.project_name ?? 'Unknown',
     }));
 

@@ -125,6 +125,69 @@ describe('Projects API', () => {
     expect(second.json().abbreviation).toBe('pd2');
   });
 
+  it('archived projects free their abbreviation for re-use', async () => {
+    const first = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'A', path: '/abbr-archive', project_type_id: 'software-dev', abbreviation: 'tmp' },
+    });
+    expect(first.statusCode).toBe(201);
+    await app.inject({ method: 'DELETE', url: `/api/projects/${first.json().id}` });
+
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'B', path: '/abbr-archive-2', project_type_id: 'software-dev', abbreviation: 'tmp' },
+    });
+    expect(second.statusCode).toBe(201);
+    expect(second.json().abbreviation).toBe('tmp'); // archived row didn't block re-use
+  });
+
+  it('PATCH abbreviation rejects explicit collision with 409 (no silent suffix)', async () => {
+    const a = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'A', path: '/patch-1', project_type_id: 'software-dev', abbreviation: 'aaa' },
+    });
+    const b = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'B', path: '/patch-2', project_type_id: 'software-dev', abbreviation: 'bbb' },
+    });
+    // B tries to rename to A's abbreviation — explicit user input, not a derived
+    // default — should 409, not silently become "aaa2".
+    const conflict = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${b.json().id}`,
+      payload: { abbreviation: 'aaa' },
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json().error).toMatch(/already in use/i);
+    // Original value preserved.
+    const after = await app.inject({ method: 'GET', url: `/api/projects/${b.json().id}` });
+    expect(after.json().abbreviation).toBe('bbb');
+    // unused var guards
+    void a;
+  });
+
+  it('PATCH abbreviation no-op (same value) succeeds without bumping updated_at', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'NoOp', path: '/patch-noop', project_type_id: 'software-dev', abbreviation: 'noop' },
+    });
+    const before = created.json().updated_at;
+    // Wait one ms so updated_at would differ if the UPDATE fired.
+    await new Promise((r) => setTimeout(r, 2));
+    const same = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${created.json().id}`,
+      payload: { abbreviation: 'noop' },
+    });
+    expect(same.statusCode).toBe(200);
+    expect(same.json().updated_at).toBe(before);
+  });
+
   it('rejects abbreviation outside the allowed charset', async () => {
     const res = await app.inject({
       method: 'POST',

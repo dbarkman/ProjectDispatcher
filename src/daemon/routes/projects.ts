@@ -8,6 +8,7 @@ import {
   updateProject,
   archiveProject,
   wakeProject,
+  AbbreviationConflictError,
 } from '../../db/queries/projects.js';
 import {
   cloneProjectType,
@@ -227,12 +228,22 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
       }
     }
 
-    const updated = updateProject(db, id, {
-      name: body.name,
-      projectTypeId: body.project_type_id,
-      status: body.status,
-      abbreviation: body.abbreviation,
-    });
+    let updated;
+    try {
+      updated = updateProject(db, id, {
+        name: body.name,
+        projectTypeId: body.project_type_id,
+        status: body.status,
+        abbreviation: body.abbreviation,
+      });
+    } catch (err) {
+      if (err instanceof AbbreviationConflictError) {
+        return reply.status(409).send({
+          error: `Abbreviation '${err.requested}' is already in use by another active project`,
+        });
+      }
+      throw err;
+    }
     if (!updated) {
       return reply.status(404).send({ error: 'Project not found' });
     }

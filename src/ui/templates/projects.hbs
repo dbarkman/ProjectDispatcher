@@ -91,6 +91,10 @@
   // Mirrors the server-side deriveAbbreviation rules well enough to give
   // a sensible default. Server still re-derives + checks uniqueness on
   // create — this is just UX prefill the user can edit.
+  //
+  // KEEP IN SYNC with src/db/queries/abbreviation.ts deriveAbbreviation().
+  // Server is authoritative; drift is cosmetic, not exploitable, but
+  // confusing UX. If you change the rules, change both places.
   function suggestAbbreviation(name) {
     var trimmed = (name || '').trim();
     var abbr = '';

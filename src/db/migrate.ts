@@ -131,7 +131,7 @@ function backfillProjectAbbreviations(db: Database): void {
   // abbreviation when two project names happen to derive the same root.
   const rows = db
     .prepare(
-      "SELECT id, name FROM projects WHERE abbreviation IS NULL ORDER BY created_at, id",
+      "SELECT id, name FROM projects WHERE abbreviation IS NULL ORDER BY created_at ASC, id ASC",
     )
     .all() as { id: string; name: string }[];
   if (rows.length === 0) return;

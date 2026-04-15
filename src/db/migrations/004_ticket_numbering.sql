@@ -30,7 +30,7 @@ ALTER TABLE tickets ADD COLUMN sequence_number INTEGER;
 -- and assign that rank as sequence_number. SQLite has had window functions
 -- since 3.25 (2018); we already require >=3.38 for partial indexes.
 WITH ranked AS (
-  SELECT id, ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY created_at, id) AS seq
+  SELECT id, ROW_NUMBER() OVER (PARTITION BY project_id ORDER BY created_at ASC, id ASC) AS seq
   FROM tickets
 )
 UPDATE tickets

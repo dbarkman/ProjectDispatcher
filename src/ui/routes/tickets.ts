@@ -5,6 +5,7 @@ import type { TicketComment } from '../../db/queries/tickets.js';
 import { getTicketWithComments } from '../../db/queries/tickets.js';
 import { listAgentRuns } from '../../db/queries/agent-runs.js';
 import { listAttachments } from '../../db/queries/attachments.js';
+import { formatTicketDisplayId } from '../../db/queries/abbreviation.js';
 import { getInboxCount } from './helpers.js';
 
 const uuidParam = z.object({ id: z.string().uuid() });
@@ -107,7 +108,7 @@ export async function ticketUiRoutes(
       ],
       ticket: {
         ...ticket,
-        displayId: `${project.abbreviation}-${ticket.sequence_number}`,
+        displayId: formatTicketDisplayId(project.abbreviation, ticket.sequence_number),
       },
       comments,
       columns,

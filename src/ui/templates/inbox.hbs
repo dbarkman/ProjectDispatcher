@@ -120,6 +120,7 @@
   <table id="inbox-table" class="w-full text-sm">
     <thead>
       <tr class="border-b border-navy-700 text-left text-gray-400">
+        <th class="pb-3 pr-4 font-medium w-24">ID</th>
         <th class="pb-3 pr-4 font-medium">Project</th>
         <th class="pb-3 pr-4 font-medium">Title</th>
         <th class="pb-3 pr-4 font-medium w-20">Priority</th>
@@ -131,6 +132,9 @@
       <tr class="border-b border-navy-800 hover:bg-navy-800/50 cursor-pointer"
           data-project="{{this.projectName}}" data-priority="{{this.priority}}" data-updated="{{this.updated_at}}"
           onclick="window.location='/ui/tickets/{{this.id}}'">
+        <td class="py-3 pr-4">
+          <span class="text-gray-300 text-xs font-mono">{{this.displayId}}</span>
+        </td>
         <td class="py-3 pr-4">
           <span class="text-accent text-xs font-mono">[{{this.projectName}}]</span>
         </td>

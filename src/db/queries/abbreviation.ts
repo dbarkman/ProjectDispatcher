@@ -9,7 +9,7 @@ import type { Database } from 'better-sqlite3';
  *   1. CamelCase / PascalCase: take every uppercase letter, lowercase it.
  *      "ProjectDispatcher" → "pd"
  *      "HandyManagerHub"   → "hmh"
- *      "iOS"               → "ios"
+ *      "iOS"               → "os"   (only uppercase letters count; leading 'i' dropped)
  *   2. Word-separated (hyphen / underscore / space): take first letter of
  *      each word.
  *      "my-cool-app"       → "mca"
@@ -52,20 +52,49 @@ export function deriveAbbreviation(name: string): string {
  * If the base is taken, append a digit suffix and try again until free.
  *   "pd" taken → "pd2"; "pd2" taken → "pd3"; ...
  *
- * Caller should run inside a transaction to avoid TOCTOU between the lookup
- * and the eventual INSERT.
+ * Used at create-time where a derived default may collide with an existing
+ * project — auto-suffix is the right UX. For updates use isAbbreviationTaken
+ * directly so explicit user input collisions surface as 409s instead of
+ * silently rewriting the user's choice. Caller wraps in a transaction to
+ * close the TOCTOU window between lookup and INSERT/UPDATE.
  */
 export function uniqueAbbreviation(db: Database, base: string): string {
-  const stmt = db.prepare(
-    "SELECT 1 FROM projects WHERE abbreviation = ? AND status != 'archived' LIMIT 1",
-  );
-  if (!stmt.get(base)) return base;
+  if (!isAbbreviationTaken(db, base)) return base;
+  // n=2..999 inclusive = 998 suffix attempts. 998 collisions on the same
+  // root means somebody is fuzzing or operator made a mistake; fail loud.
   for (let n = 2; n < 1000; n++) {
     const candidate = `${base}${n}`;
-    if (!stmt.get(candidate)) return candidate;
+    if (!isAbbreviationTaken(db, candidate)) return candidate;
   }
-  // 999 collisions on the same root would be operator-error; fail loud.
-  throw new Error(`No free abbreviation under ${base} after 999 attempts`);
+  throw new Error(`No free abbreviation under ${base} after 998 attempts`);
+}
+
+/**
+ * Check whether an abbreviation is already claimed by an active project.
+ * Used by updateProject to surface explicit-collision as a 409 — silently
+ * suffixing a user's typed value to "pd5" without telling them is hostile UX.
+ * @param excludeProjectId — pass the project being updated so its own row
+ * doesn't count as a collision against itself.
+ */
+export function isAbbreviationTaken(
+  db: Database,
+  abbreviation: string,
+  excludeProjectId?: string,
+): boolean {
+  if (excludeProjectId) {
+    return Boolean(
+      db
+        .prepare(
+          "SELECT 1 FROM projects WHERE abbreviation = ? AND status != 'archived' AND id != ? LIMIT 1",
+        )
+        .get(abbreviation, excludeProjectId),
+    );
+  }
+  return Boolean(
+    db
+      .prepare("SELECT 1 FROM projects WHERE abbreviation = ? AND status != 'archived' LIMIT 1")
+      .get(abbreviation),
+  );
 }
 
 /**

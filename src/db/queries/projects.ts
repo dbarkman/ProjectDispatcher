@@ -1,6 +1,20 @@
 import type { Database } from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
-import { deriveAbbreviation, uniqueAbbreviation } from './abbreviation.js';
+import {
+  deriveAbbreviation,
+  isAbbreviationTaken,
+  uniqueAbbreviation,
+} from './abbreviation.js';
+
+/** Thrown by updateProject when the requested abbreviation is taken by
+ *  another active project. Routes catch + return 409 with a clear message
+ *  instead of silently auto-suffixing the user's typed value. */
+export class AbbreviationConflictError extends Error {
+  constructor(public readonly requested: string) {
+    super(`Abbreviation already in use by another active project: ${requested}`);
+    this.name = 'AbbreviationConflictError';
+  }
+}
 
 export interface Project {
   id: string;
@@ -101,40 +115,51 @@ export function updateProject(
   id: string,
   data: UpdateProjectData,
 ): ProjectWithHeartbeat | null {
-  const existing = getProject(db, id);
-  if (!existing) return null;
+  // Wrap the read + collision check + UPDATE in a single transaction so
+  // two concurrent renames to the same target can't both pass the check
+  // and race on the partial unique index.
+  return db.transaction(() => {
+    const existing = getProject(db, id);
+    if (!existing) return null;
 
-  const now = Date.now();
-  const fields: string[] = ['updated_at = ?'];
-  const values: unknown[] = [now];
+    const fields: string[] = [];
+    const values: unknown[] = [];
 
-  if (data.name !== undefined) {
-    fields.push('name = ?');
-    values.push(data.name);
-  }
-  if (data.projectTypeId !== undefined) {
-    fields.push('project_type_id = ?');
-    values.push(data.projectTypeId);
-  }
-  if (data.status !== undefined) {
-    fields.push('status = ?');
-    values.push(data.status);
-  }
-  if (data.abbreviation !== undefined) {
-    // Skip collision check when the value isn't changing; otherwise
-    // the row would match itself. Trim to be tolerant of UI whitespace.
-    const requested = data.abbreviation.trim();
-    if (requested !== existing.abbreviation) {
-      const resolved = uniqueAbbreviation(db, requested);
-      fields.push('abbreviation = ?');
-      values.push(resolved);
+    if (data.name !== undefined && data.name !== existing.name) {
+      fields.push('name = ?');
+      values.push(data.name);
     }
-  }
+    if (data.projectTypeId !== undefined && data.projectTypeId !== existing.project_type_id) {
+      fields.push('project_type_id = ?');
+      values.push(data.projectTypeId);
+    }
+    if (data.status !== undefined && data.status !== existing.status) {
+      fields.push('status = ?');
+      values.push(data.status);
+    }
+    if (data.abbreviation !== undefined) {
+      const requested = data.abbreviation.trim();
+      if (requested !== existing.abbreviation) {
+        // Explicit user input — refuse with a typed error on collision instead
+        // of silently appending a digit suffix. Caller (route) maps to 409.
+        if (isAbbreviationTaken(db, requested, existing.id)) {
+          throw new AbbreviationConflictError(requested);
+        }
+        fields.push('abbreviation = ?');
+        values.push(requested);
+      }
+    }
 
-  values.push(id);
-  db.prepare(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    // No real changes? Skip the UPDATE entirely so updated_at doesn't
+    // get bumped on a no-op. (Review L-1.)
+    if (fields.length === 0) return existing;
 
-  return getProject(db, id);
+    fields.push('updated_at = ?');
+    values.push(Date.now());
+    values.push(id);
+    db.prepare(`UPDATE projects SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    return getProject(db, id);
+  })();
 }
 
 export function archiveProject(db: Database, id: string): boolean {

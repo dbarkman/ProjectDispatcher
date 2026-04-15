@@ -11,6 +11,7 @@ import {
   listAgentTypes,
   listAgentTypesForProject,
 } from '../../db/queries/agent-types.js';
+import { formatTicketDisplayId } from '../../db/queries/abbreviation.js';
 import { readFile } from 'node:fs/promises';
 import { resolvePromptPath } from '../../services/prompt-file.js';
 import { discoverProjects, folderDisplayName } from '../../daemon/discovery.js';
@@ -104,7 +105,7 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
       isHuman: col.column_id === 'human',
       tickets: (ticketsByColumn.get(col.column_id) ?? []).map((t) => ({
         ...t,
-        displayId: `${project.abbreviation}-${t.sequence_number}`,
+        displayId: formatTicketDisplayId(project.abbreviation, t.sequence_number),
         isClaimed: t.claimed_by_run_id !== null,
         statusColor: ticketStatuses.get(t.id) ?? 'gray',
       })),
