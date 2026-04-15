@@ -139,13 +139,19 @@ export async function runAgent(
     mcpConfigPath = join(ARTIFACTS_DIR, `${runId}-mcp.json`);
     await mkdir(ARTIFACTS_DIR, { recursive: true });
 
-    const mcpServerPath = resolve(join(__dirname, '..', 'mcp', 'server.js'));
+    // Resolve to .ts in source and spawn via tsx so the same path works in
+    // dev (tsx-watch daemon, no compiled output) and prod (npm run build
+    // emits dist/mcp/server.js but tsx still happily executes either).
+    // Earlier code pointed at server.js which only exists post-build, so
+    // dev-mode agents got "MCP tools not available" from a silent spawn
+    // failure. (Ticket #5e892a59.)
+    const mcpServerPath = resolve(join(__dirname, '..', 'mcp', 'server.ts'));
 
     const mcpConfig = {
       mcpServers: {
         dispatch: {
-          command: 'node',
-          args: [mcpServerPath],
+          command: 'npx',
+          args: ['tsx', mcpServerPath],
           env: {
             DISPATCH_RUN_ID: runId,
             DISPATCH_TICKET_ID: ticketId,
