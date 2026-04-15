@@ -566,6 +566,55 @@ describe('Project Workflow API (per-project templates)', () => {
     expect(res.statusCode).toBe(404);
   });
 
+  it('PATCH from settings form updates name + abbreviation + path', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${projectId}`,
+      payload: {
+        name: 'Renamed Project',
+        abbreviation: 'rp',
+        path: '/renamed-path',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const after = res.json();
+    expect(after.name).toBe('Renamed Project');
+    expect(after.abbreviation).toBe('rp');
+    expect(after.path).toBe('/renamed-path');
+  });
+
+  it('PATCH path collision with another active project returns 409', async () => {
+    const other = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'PathTaken', path: '/already-here', project_type_id: 'software-dev' },
+    });
+    expect(other.statusCode).toBe(201);
+    const conflict = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${projectId}`,
+      payload: { path: '/already-here' },
+    });
+    expect(conflict.statusCode).toBe(409);
+    expect(conflict.json().error).toMatch(/already registered/i);
+  });
+
+  it('PATCH path to archived project\'s path succeeds (archived rows freed)', async () => {
+    const tmp = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'Tmp', path: '/will-archive', project_type_id: 'software-dev' },
+    });
+    await app.inject({ method: 'DELETE', url: `/api/projects/${tmp.json().id}` });
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${projectId}`,
+      payload: { path: '/will-archive' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().path).toBe('/will-archive');
+  });
+
   it('renders the project-scoped agent edit page for a forked (project-scoped) agent', async () => {
     // Fork a library agent into this project, then GET the project-scoped
     // edit page. Smoke test: 200 + HTML + breadcrumbs include the project name.

@@ -36,14 +36,15 @@
             class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 font-mono focus:border-accent focus:outline-none">
           <p class="text-[10px] text-gray-500 mt-1">
             Filesystem path the discovery loop watches. Changing this points the project
-            at a different folder; existing tickets stay attached.
+            at a different folder; existing tickets stay attached. Renaming to a path
+            already used by another active project returns 409 (no overwrite).
           </p>
         </div>
 
         <div>
-          <label class="block text-xs text-gray-500 mb-1">Project Type</label>
-          <input value="{{project.project_type_id}}" disabled
-            class="w-full bg-navy-950 border border-navy-800 rounded px-3 py-2 text-sm text-gray-500 font-mono">
+          <label class="block text-xs text-gray-500 mb-1">Project Type (template)</label>
+          <input value="{{projectTypeName}}" disabled
+            class="w-full bg-navy-950 border border-navy-800 rounded px-3 py-2 text-sm text-gray-500">
           <p class="text-[10px] text-gray-500 mt-1">
             Read-only. The project's workflow was cloned from this template at registration.
             Switching templates is a separate operation (not implemented yet).
@@ -85,10 +86,10 @@
   function handleSettingsResponse(event) {
     var status = document.getElementById('settings-status');
     if (event.detail.successful) {
-      status.textContent = 'Saved.';
-      status.className = 'text-xs text-green-400 ml-2';
-      // Soft reload after a beat so the user sees the confirmation.
-      setTimeout(function () { window.location.reload(); }, 400);
+      // Reload immediately — the fresh page rendering with new values is
+      // its own confirmation. The earlier 400ms toast-then-reload raced
+      // typing if the user kept editing in the gap. (Review M-1.)
+      window.location.reload();
       return;
     }
     var msg = 'Save failed.';

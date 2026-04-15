@@ -9,6 +9,7 @@ import {
   archiveProject,
   wakeProject,
   AbbreviationConflictError,
+  PathConflictError,
 } from '../../db/queries/projects.js';
 import {
   cloneProjectType,
@@ -232,6 +233,7 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
     try {
       updated = updateProject(db, id, {
         name: body.name,
+        path: body.path,
         projectTypeId: body.project_type_id,
         status: body.status,
         abbreviation: body.abbreviation,
@@ -240,6 +242,11 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
       if (err instanceof AbbreviationConflictError) {
         return reply.status(409).send({
           error: `Abbreviation '${err.requested}' is already in use by another active project`,
+        });
+      }
+      if (err instanceof PathConflictError) {
+        return reply.status(409).send({
+          error: `Path '${err.requested}' is already registered to another active project`,
         });
       }
       throw err;

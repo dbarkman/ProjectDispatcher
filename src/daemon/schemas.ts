@@ -52,6 +52,7 @@ export const updateProjectWorkflowBody = z.object({
 
 export const updateProjectBody = z.object({
   name: z.string().min(1).max(200).optional(),
+  path: z.string().min(1).optional(),
   project_type_id: z.string().min(1).optional(),
   status: z.enum(['active', 'dormant', 'missing', 'archived']).optional(),
   abbreviation: z.string().min(1).max(12).regex(/^[a-z0-9]+$/).optional(),

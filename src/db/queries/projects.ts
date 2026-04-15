@@ -16,6 +16,17 @@ export class AbbreviationConflictError extends Error {
   }
 }
 
+/** Thrown by updateProject when the requested path is already used by
+ *  another active project. Mirrors AbbreviationConflictError so the route
+ *  can return a clean 409 with the offending value, instead of letting
+ *  the SQLite UNIQUE violation surface as a generic 500. */
+export class PathConflictError extends Error {
+  constructor(public readonly requested: string) {
+    super(`Path already registered to another active project: ${requested}`);
+    this.name = 'PathConflictError';
+  }
+}
+
 export interface Project {
   id: string;
   name: string;
@@ -49,6 +60,7 @@ export interface CreateProjectData {
 
 export interface UpdateProjectData {
   name?: string;
+  path?: string;
   projectTypeId?: string;
   status?: string;
   abbreviation?: string;
@@ -128,6 +140,20 @@ export function updateProject(
     if (data.name !== undefined && data.name !== existing.name) {
       fields.push('name = ?');
       values.push(data.name);
+    }
+    if (data.path !== undefined && data.path !== existing.path) {
+      // Defense-in-depth path uniqueness check inside the transaction.
+      // Schema partial-unique-index is the authoritative enforcement; this
+      // pre-check returns a clean typed error → 409 instead of letting a
+      // raw SqliteError bubble as a generic 500. (Review #951cacc2 C-1/C-2.)
+      const taken = db
+        .prepare(
+          "SELECT 1 FROM projects WHERE path = ? AND status != 'archived' AND id != ? LIMIT 1",
+        )
+        .get(data.path, existing.id);
+      if (taken) throw new PathConflictError(data.path);
+      fields.push('path = ?');
+      values.push(data.path);
     }
     if (data.projectTypeId !== undefined && data.projectTypeId !== existing.project_type_id) {
       fields.push('project_type_id = ?');

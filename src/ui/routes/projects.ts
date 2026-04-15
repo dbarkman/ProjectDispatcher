@@ -195,6 +195,13 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
     const project = getProject(db, id);
     if (!project) return reply.status(404).send('Project not found');
 
+    // Resolve the project_type display name so the read-only field
+    // shows something meaningful instead of a UUID. (Review M-2.)
+    const ptRow = db
+      .prepare('SELECT name FROM project_types WHERE id = ?')
+      .get(project.project_type_id) as { name: string } | undefined;
+    const projectTypeName = ptRow?.name ?? project.project_type_id;
+
     return reply.view('project-settings.hbs', {
       activePage: 'projects',
       pageTitle: `${project.name} — Settings`,
@@ -205,6 +212,7 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
         { label: 'Settings', href: `/ui/projects/${project.id}/settings` },
       ],
       project,
+      projectTypeName,
     });
   });
 
