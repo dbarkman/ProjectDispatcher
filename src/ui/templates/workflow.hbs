@@ -255,8 +255,12 @@
     var opt = selectEl.options[selectEl.selectedIndex];
     var scope = opt ? opt.getAttribute('data-scope') : null;
     if (scope === 'project') {
+      // Project-scoped agent → use the project-scoped edit route. Keeps
+      // the user inside the project context and returns them to the
+      // workflow page after save. (Ticket #ff473cef.)
       controls.innerHTML =
-        '<a href="/ui/agent-types/' + encodeURIComponent(selected) + '" target="_blank" ' +
+        '<a href="/ui/projects/' + encodeURIComponent(PROJECT_ID) + '/agents/' +
+        encodeURIComponent(selected) + '/edit" ' +
         'class="text-xs text-accent hover:text-accent-hover px-2 py-1">Edit</a>';
     } else if (scope === 'library') {
       var btn = document.createElement('button');
@@ -302,7 +306,11 @@
       var data = await res.json();
       // Reload to pick up the new agent in the dropdown and the updated column binding.
       // After reload the user can click "Edit" on the now-project-scoped agent.
-      window.location = '/ui/agent-types/' + encodeURIComponent(data.forked_agent_type_id);
+      // Land on the project-scoped edit page so the left nav stays on
+      // Projects and Save returns the user to the workflow editor.
+      window.location =
+        '/ui/projects/' + encodeURIComponent(PROJECT_ID) +
+        '/agents/' + encodeURIComponent(data.forked_agent_type_id) + '/edit';
     } catch (e) {
       alert('Fork failed: ' + e.message);
     }

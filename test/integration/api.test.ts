@@ -395,6 +395,74 @@ describe('Project Workflow API (per-project templates)', () => {
     expect(libAfter.system_prompt_path).toBe(libraryCodingAgent.system_prompt_path);
   });
 
+  it('renders the project-scoped agent edit page for a forked (project-scoped) agent', async () => {
+    // Fork a library agent into this project, then GET the project-scoped
+    // edit page. Smoke test: 200 + HTML + breadcrumbs include the project name.
+    const fork = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${projectId}/agents/fork`,
+      payload: { agent_type_id: 'coding-agent' },
+    });
+    expect(fork.statusCode).toBe(201);
+    const forkedId = fork.json().forked_agent_type_id;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/ui/projects/${projectId}/agents/${forkedId}/edit`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/html/);
+    // Workflow page is in the breadcrumb chain → user can navigate back.
+    expect(res.body).toContain(`/ui/projects/${projectId}/workflow`);
+    // saveRedirectUrl is set to the workflow page, surfaced in the data attribute.
+    expect(res.body).toContain(`data-url="/ui/projects/${projectId}/workflow"`);
+  });
+
+  it('refuses to edit a library agent through the project-scoped route', async () => {
+    // Library agents (owner_project_id IS NULL) must be edited via
+    // /ui/agent-types/:id, not via the project route. Otherwise a user
+    // could mistake the project-scoped route for a way to edit shared
+    // library agents from project context.
+    const res = await app.inject({
+      method: 'GET',
+      url: `/ui/projects/${projectId}/agents/coding-agent/edit`,
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('refuses to edit another project\'s scoped agent through this project\'s route', async () => {
+    // Set up a second project, fork an agent into it, then try to access
+    // that fork through the FIRST project's edit route. Should 404.
+    const otherProj = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'OtherWf', path: '/wf-other-edit', project_type_id: 'software-dev' },
+    });
+    const otherId = otherProj.json().id;
+    const fork = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${otherId}/agents/fork`,
+      payload: { agent_type_id: 'coding-agent' },
+    });
+    const otherForkId = fork.json().forked_agent_type_id;
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/ui/projects/${projectId}/agents/${otherForkId}/edit`,
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
+  it('library agent-types detail route still works (no regression)', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/ui/agent-types/coding-agent',
+    });
+    expect(res.statusCode).toBe(200);
+    // Library route does NOT set saveRedirectUrl → data-url attribute is empty.
+    expect(res.body).toContain('data-url=""');
+  });
+
   it('renders the workflow editor HTML page without a Handlebars parse error', async () => {
     // The rest of this suite exercises only /api/projects/:id/workflow (JSON).
     // Handlebars compiles templates lazily on first request, so a stray

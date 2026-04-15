@@ -7,9 +7,12 @@ import {
   listProjectTypes,
 } from '../../db/queries/project-types.js';
 import {
+  getAgentType,
   listAgentTypes,
   listAgentTypesForProject,
 } from '../../db/queries/agent-types.js';
+import { readFile } from 'node:fs/promises';
+import { resolvePromptPath } from '../../services/prompt-file.js';
 import { discoverProjects, folderDisplayName } from '../../daemon/discovery.js';
 import { getInboxCount } from './helpers.js';
 import { getTicketStatuses } from '../../db/queries/agent-runs.js';
@@ -181,4 +184,67 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
       agentChoicesJson: JSON.stringify(agentChoices).replace(/</g, '\\u003C'),
     });
   });
+
+  // GET /ui/projects/:id/agents/:agentId/edit — project-scoped agent edit.
+  //
+  // Same form as /ui/agent-types/:id but renders under project context:
+  // breadcrumbs walk back through the project + workflow editor, the
+  // left-nav highlight stays on Projects, and Save redirects back to
+  // the workflow page (so the Customize → Edit button transition is
+  // visible without manual reload).
+  //
+  // Security: only agents owned by THIS project are editable through
+  // this route. Library agents (owner_project_id IS NULL) and agents
+  // owned by other projects return 404. Editing library agents must
+  // go through /ui/agent-types/:id (a deliberate, library-only flow).
+  app.get<{ Params: { id: string; agentId: string } }>(
+    '/ui/projects/:id/agents/:agentId/edit',
+    async (request, reply) => {
+      const params = z
+        .object({
+          id: z.string().uuid(),
+          agentId: z.string().min(1).max(100).regex(/^[a-z0-9-]+$/),
+        })
+        .parse(request.params);
+
+      const project = getProject(db, params.id);
+      if (!project) return reply.status(404).send('Project not found');
+
+      const agent = getAgentType(db, params.agentId);
+      if (!agent || agent.owner_project_id !== project.id) {
+        return reply.status(404).send('Agent not found in this project');
+      }
+
+      let promptText = '';
+      try {
+        const path = resolvePromptPath(agent.system_prompt_path);
+        promptText = await readFile(path, 'utf8');
+      } catch {
+        // Missing prompt file → empty editor; user can write fresh content.
+      }
+
+      const tools = (() => {
+        try { return JSON.parse(agent.allowed_tools) as string[]; }
+        catch { return []; }
+      })();
+
+      return reply.view('agent-type-detail.hbs', {
+        activePage: 'projects',
+        pageTitle: `${project.name} — ${agent.name}`,
+        inboxCount: getInboxCount(db) || undefined,
+        breadcrumbs: [
+          { label: 'Projects', href: '/ui/projects' },
+          { label: project.name, href: `/ui/projects/${project.id}` },
+          { label: 'Workflow', href: `/ui/projects/${project.id}/workflow` },
+          { label: agent.name, href: `/ui/projects/${project.id}/agents/${agent.id}/edit` },
+        ],
+        agentType: agent,
+        promptText,
+        tools,
+        // After save, return user to the workflow editor so Customize → Edit
+        // transition is visible without a manual reload.
+        saveRedirectUrl: `/ui/projects/${project.id}/workflow`,
+      });
+    },
+  );
 }

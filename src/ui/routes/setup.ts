@@ -45,6 +45,14 @@ export async function setupUi(app: FastifyInstance, db: Database, config: Config
   Handlebars.registerPartial('commentThread', commentThreadSrc);
   const commentThreadTemplate = Handlebars.compile(commentThreadSrc);
 
+  // Agent edit form partial. Used by both the library agent-types detail
+  // page and the project-scoped agent edit page; the wrapping template
+  // controls breadcrumbs and saveRedirectUrl. Shared partial = single
+  // source of truth for the form structure when option C (inline drawer)
+  // ships later.
+  const agentEditFormSrc = await readFile(join(templatesDir, 'agent-edit-form.hbs'), 'utf8');
+  Handlebars.registerPartial('agentEditForm', agentEditFormSrc);
+
   // Template engine
   await app.register(fastifyView, {
     engine: { handlebars: Handlebars },
