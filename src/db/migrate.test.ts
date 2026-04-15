@@ -23,6 +23,8 @@ const EXPECTED_INDEXES = [
   'idx_agent_runs_ticket',
   'idx_projects_status',
   'idx_projects_path_active',
+  'idx_projects_abbreviation_active',
+  'idx_tickets_project_seq',
   'idx_project_heartbeats_next_check',
 ];
 
@@ -76,6 +78,7 @@ describe('runMigrations', () => {
         '001_init.sql',
         '002_ticket_attachments.sql',
         '003_project_scoped_templates.sql',
+        '004_ticket_numbering.sql',
       ];
       expect(first.applied).toEqual(expectedMigrations);
       expect(first.skipped).toEqual([]);

@@ -55,8 +55,10 @@ export async function ticketUiRoutes(
     if (!ticket) return reply.status(404).send('Ticket not found');
 
     const project = db
-      .prepare('SELECT id, name, project_type_id FROM projects WHERE id = ?')
-      .get(ticket.project_id) as { id: string; name: string; project_type_id: string } | undefined;
+      .prepare('SELECT id, name, project_type_id, abbreviation FROM projects WHERE id = ?')
+      .get(ticket.project_id) as
+      | { id: string; name: string; project_type_id: string; abbreviation: string }
+      | undefined;
 
     // Defense in depth: ticket must resolve to an existing project. The daemon
     // has FK constraints so this shouldn't ever fail in practice, but refuse
@@ -105,7 +107,7 @@ export async function ticketUiRoutes(
       ],
       ticket: {
         ...ticket,
-        shortId: ticket.id.slice(0, 8),
+        displayId: `${project.abbreviation}-${ticket.sequence_number}`,
       },
       comments,
       columns,

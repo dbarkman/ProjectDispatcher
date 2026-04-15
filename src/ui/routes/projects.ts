@@ -72,7 +72,7 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
     // Get tickets grouped by column
     const tickets = db
       .prepare(
-        `SELECT id, title, priority, "column", claimed_by_run_id, updated_at
+        `SELECT id, title, priority, "column", claimed_by_run_id, sequence_number, updated_at
          FROM tickets WHERE project_id = ?
          ORDER BY created_at`,
       )
@@ -82,6 +82,7 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
         priority: string;
         column: string;
         claimed_by_run_id: string | null;
+        sequence_number: number;
         updated_at: number;
       }>;
 
@@ -103,7 +104,7 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
       isHuman: col.column_id === 'human',
       tickets: (ticketsByColumn.get(col.column_id) ?? []).map((t) => ({
         ...t,
-        shortId: t.id.slice(0, 8),
+        displayId: `${project.abbreviation}-${t.sequence_number}`,
         isClaimed: t.claimed_by_run_id !== null,
         statusColor: ticketStatuses.get(t.id) ?? 'gray',
       })),

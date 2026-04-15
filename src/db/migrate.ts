@@ -2,6 +2,7 @@ import type { Database } from 'better-sqlite3';
 import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { deriveAbbreviation, uniqueAbbreviation } from './queries/abbreviation.js';
 
 /**
  * Migrations live next to this file. In dev (vitest / tsx) this resolves to
@@ -99,6 +100,10 @@ export function runMigrations(db: Database): MigrationResult {
     const apply = db.transaction(() => {
       db.exec(sql);
       recordStmt.run(filename, Date.now());
+      // Per-migration post-hooks run inside the same transaction so a hook
+      // failure rolls the migration back. Keep these tiny — purely the kind
+      // of data fix-up that can't be expressed in SQL.
+      runPostMigrationHook(db, filename);
     });
 
     apply();
@@ -106,4 +111,34 @@ export function runMigrations(db: Database): MigrationResult {
   }
 
   return { applied, skipped };
+}
+
+/**
+ * Hook for migrations that need a small TypeScript-driven backfill on top
+ * of the SQL. Currently only used for migration 004 which adds an
+ * abbreviation column to projects but defers the CamelCase-aware
+ * derivation to the deriveAbbreviation helper. Keep this explicit and
+ * file-named so the link from SQL → code is obvious to a reader.
+ */
+function runPostMigrationHook(db: Database, filename: string): void {
+  if (filename === '004_ticket_numbering.sql') {
+    backfillProjectAbbreviations(db);
+  }
+}
+
+function backfillProjectAbbreviations(db: Database): void {
+  // Process in created_at order so older projects get the unsuffixed
+  // abbreviation when two project names happen to derive the same root.
+  const rows = db
+    .prepare(
+      "SELECT id, name FROM projects WHERE abbreviation IS NULL ORDER BY created_at, id",
+    )
+    .all() as { id: string; name: string }[];
+  if (rows.length === 0) return;
+
+  const update = db.prepare('UPDATE projects SET abbreviation = ? WHERE id = ?');
+  for (const row of rows) {
+    const abbr = uniqueAbbreviation(db, deriveAbbreviation(row.name));
+    update.run(abbr, row.id);
+  }
 }

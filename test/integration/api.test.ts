@@ -87,6 +87,56 @@ describe('Projects API', () => {
     expect(dup.statusCode).toBe(409);
   });
 
+  it('auto-derives an abbreviation from name when none provided', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'HandyManagerHub', path: '/abbr-auto', project_type_id: 'software-dev' },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().abbreviation).toBe('hmh');
+  });
+
+  it('honors explicit abbreviation when provided', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: {
+        name: 'Whatever', path: '/abbr-explicit',
+        project_type_id: 'software-dev', abbreviation: 'foo',
+      },
+    });
+    expect(res.statusCode).toBe(201);
+    expect(res.json().abbreviation).toBe('foo');
+  });
+
+  it('appends digit suffix on abbreviation collision', async () => {
+    await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'A', path: '/c1', project_type_id: 'software-dev', abbreviation: 'pd' },
+    });
+    const second = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'B', path: '/c2', project_type_id: 'software-dev', abbreviation: 'pd' },
+    });
+    expect(second.statusCode).toBe(201);
+    expect(second.json().abbreviation).toBe('pd2');
+  });
+
+  it('rejects abbreviation outside the allowed charset', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: {
+        name: 'Bad', path: '/bad-abbr',
+        project_type_id: 'software-dev', abbreviation: 'PD-1',
+      },
+    });
+    expect(res.statusCode).toBe(400);
+  });
+
   it('allows re-registering the path of an archived project', async () => {
     // Register, archive, re-register same path — should succeed with 201.
     // Archived rows are excluded from the partial unique index on
@@ -149,6 +199,42 @@ describe('Tickets API', () => {
       payload: { name: 'TP', path: '/tp-api', project_type_id: 'software-dev' },
     });
     projectId = res.json().id;
+  });
+
+  it('assigns monotonically-increasing sequence_number per project', async () => {
+    const t1 = await app.inject({
+      method: 'POST', url: '/api/tickets',
+      payload: { project_id: projectId, title: 'first' },
+    });
+    const t2 = await app.inject({
+      method: 'POST', url: '/api/tickets',
+      payload: { project_id: projectId, title: 'second' },
+    });
+    const t3 = await app.inject({
+      method: 'POST', url: '/api/tickets',
+      payload: { project_id: projectId, title: 'third' },
+    });
+    expect(t1.json().sequence_number).toBe(1);
+    expect(t2.json().sequence_number).toBe(2);
+    expect(t3.json().sequence_number).toBe(3);
+  });
+
+  it('sequence_number is independent across projects', async () => {
+    const otherProj = await app.inject({
+      method: 'POST', url: '/api/projects',
+      payload: { name: 'TP2', path: '/tp-api-2', project_type_id: 'software-dev' },
+    });
+    const otherId = otherProj.json().id;
+    const a = await app.inject({
+      method: 'POST', url: '/api/tickets',
+      payload: { project_id: projectId, title: 'A' },
+    });
+    const b = await app.inject({
+      method: 'POST', url: '/api/tickets',
+      payload: { project_id: otherId, title: 'B' },
+    });
+    expect(a.json().sequence_number).toBe(1);
+    expect(b.json().sequence_number).toBe(1); // own project's first
   });
 
   it('full ticket lifecycle: create → move → comment → show thread', async () => {

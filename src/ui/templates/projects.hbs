@@ -29,7 +29,22 @@
       <div class="mb-3">
         <label class="block text-xs text-gray-500 mb-1">Name</label>
         <input id="register-name" name="name" required
+          oninput="suggestAbbreviation(this.value)"
           class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+      </div>
+      <div class="mb-3">
+        <label class="block text-xs text-gray-500 mb-1">
+          Abbreviation
+          <span class="text-gray-600">(used in ticket ids: <code id="register-abbr-preview">pd</code>-1, -2…)</span>
+        </label>
+        <input id="register-abbreviation" name="abbreviation" required
+          pattern="[a-z0-9]+" maxlength="12"
+          oninput="document.getElementById('register-abbr-preview').textContent = this.value || 'pd';"
+          class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 font-mono focus:border-accent focus:outline-none">
+        <p class="text-[10px] text-gray-500 mt-1">
+          Lowercase letters and numbers, max 12. Server appends a digit if it collides
+          with another active project (pd, pd2, pd3...).
+        </p>
       </div>
       <div class="mb-4">
         <label class="block text-xs text-gray-500 mb-1">Template</label>
@@ -69,7 +84,30 @@
     document.getElementById('register-folder-name').textContent = path;
     document.getElementById('register-error').classList.add('hidden');
     document.getElementById('register-error').textContent = '';
+    suggestAbbreviation(name);
     document.getElementById('register-modal').classList.remove('hidden');
+  }
+
+  // Mirrors the server-side deriveAbbreviation rules well enough to give
+  // a sensible default. Server still re-derives + checks uniqueness on
+  // create — this is just UX prefill the user can edit.
+  function suggestAbbreviation(name) {
+    var trimmed = (name || '').trim();
+    var abbr = '';
+    var caps = trimmed.match(/[A-Z]/g);
+    if (caps && caps.length >= 2) {
+      abbr = caps.join('').toLowerCase().slice(0, 6);
+    } else if (/[\s\-_]/.test(trimmed)) {
+      abbr = trimmed.split(/[\s\-_]+/).filter(Boolean)
+        .map(function (w) { return w[0] || ''; }).join('')
+        .replace(/[^a-zA-Z0-9]/g, '').toLowerCase().slice(0, 6);
+    }
+    if (!abbr) {
+      abbr = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 3) || 'p';
+    }
+    var input = document.getElementById('register-abbreviation');
+    input.value = abbr;
+    document.getElementById('register-abbr-preview').textContent = abbr;
   }
 
   // Surface API errors in the modal instead of leaving it looking frozen

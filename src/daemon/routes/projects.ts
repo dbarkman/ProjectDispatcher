@@ -107,6 +107,7 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
       const project = createProject(db, {
         name: body.name,
         path: body.path,
+        abbreviation: body.abbreviation,
         projectTypeId: scopedType.id,
       });
 
@@ -230,6 +231,7 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
       name: body.name,
       projectTypeId: body.project_type_id,
       status: body.status,
+      abbreviation: body.abbreviation,
     });
     if (!updated) {
       return reply.status(404).send({ error: 'Project not found' });

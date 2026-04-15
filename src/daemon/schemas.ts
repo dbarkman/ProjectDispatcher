@@ -11,6 +11,10 @@ export const createProjectBody = z.object({
   // Template to clone on registration. Accepts a library project_type id
   // (e.g. 'software-dev') or the literal 'blank' for an empty workflow.
   project_type_id: z.string().min(1),
+  // Optional override; if absent, derived from name. Lowercased, [a-z0-9]
+  // only, max 12. Server resolves uniqueness against active projects and
+  // may append a digit suffix on collision.
+  abbreviation: z.string().min(1).max(12).regex(/^[a-z0-9]+$/).optional(),
 });
 
 /**
@@ -50,6 +54,7 @@ export const updateProjectBody = z.object({
   name: z.string().min(1).max(200).optional(),
   project_type_id: z.string().min(1).optional(),
   status: z.enum(['active', 'dormant', 'missing', 'archived']).optional(),
+  abbreviation: z.string().min(1).max(12).regex(/^[a-z0-9]+$/).optional(),
 });
 
 export const listProjectsQuery = z.object({

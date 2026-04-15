@@ -12,6 +12,8 @@ export interface Ticket {
   claimed_by_run_id: string | null;
   claimed_at: number | null;
   created_by: string;
+  /** Per-project monotonically-increasing number used for human-readable ids. */
+  sequence_number: number;
   created_at: number;
   updated_at: number;
 }
@@ -70,23 +72,36 @@ export function createTicket(db: Database, data: CreateTicketData): Ticket {
   const id = randomUUID();
   const now = Date.now();
 
-  db.prepare(
-    `INSERT INTO tickets (id, project_id, title, body, "column", priority, tags, created_by, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    id,
-    data.projectId,
-    data.title,
-    data.body ?? null,
-    data.column ?? 'human',
-    data.priority ?? 'normal',
-    data.tags ? JSON.stringify(data.tags) : null,
-    data.createdBy ?? 'human',
-    now,
-    now,
-  );
+  // Allocate the next sequence_number inside the transaction so two
+  // concurrent INSERTs can't pick the same number. better-sqlite3
+  // serializes transactions, and the UNIQUE (project_id, sequence_number)
+  // index is the schema-level safety net.
+  return db.transaction(() => {
+    const row = db
+      .prepare(
+        'SELECT COALESCE(MAX(sequence_number), 0) + 1 AS next FROM tickets WHERE project_id = ?',
+      )
+      .get(data.projectId) as { next: number };
 
-  return getTicket(db, id)!;
+    db.prepare(
+      `INSERT INTO tickets (id, project_id, title, body, "column", priority, tags, created_by, sequence_number, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      id,
+      data.projectId,
+      data.title,
+      data.body ?? null,
+      data.column ?? 'human',
+      data.priority ?? 'normal',
+      data.tags ? JSON.stringify(data.tags) : null,
+      data.createdBy ?? 'human',
+      row.next,
+      now,
+      now,
+    );
+
+    return getTicket(db, id)!;
+  })();
 }
 
 export function getTicket(db: Database, id: string): Ticket | null {

@@ -7,8 +7,10 @@ interface InboxTicketRow {
   project_id: string;
   title: string;
   priority: string;
+  sequence_number: number;
   updated_at: number;
   project_name: string | null;
+  project_abbreviation: string;
 }
 
 export async function inboxRoutes(app: FastifyInstance, db: Database): Promise<void> {
@@ -16,8 +18,8 @@ export async function inboxRoutes(app: FastifyInstance, db: Database): Promise<v
   app.get('/', async (request, reply) => {
     const tickets = db
       .prepare(
-        `SELECT t.id, t.project_id, t.title, t.priority, t.updated_at,
-                p.name AS project_name
+        `SELECT t.id, t.project_id, t.title, t.priority, t.sequence_number, t.updated_at,
+                p.name AS project_name, p.abbreviation AS project_abbreviation
          FROM tickets t
          JOIN projects p ON p.id = t.project_id
          WHERE t."column" = 'human' AND p.status != 'archived'
@@ -27,7 +29,7 @@ export async function inboxRoutes(app: FastifyInstance, db: Database): Promise<v
 
     const ticketData = tickets.map((t) => ({
       ...t,
-      shortId: t.id.slice(0, 8),
+      displayId: `${t.project_abbreviation}-${t.sequence_number}`,
       projectName: t.project_name ?? 'Unknown',
     }));
 

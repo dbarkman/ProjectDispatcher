@@ -1,5 +1,6 @@
 import type { Database } from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
+import { deriveAbbreviation, uniqueAbbreviation } from './abbreviation.js';
 
 export interface Project {
   id: string;
@@ -7,6 +8,7 @@ export interface Project {
   path: string;
   project_type_id: string;
   status: string;
+  abbreviation: string;
   last_activity_at: number | null;
   created_at: number;
   updated_at: number;
@@ -23,12 +25,19 @@ export interface CreateProjectData {
   name: string;
   path: string;
   projectTypeId: string;
+  /**
+   * Caller-supplied short identifier used to compose human-readable ticket
+   * ids ("pd-1"). If omitted, derived from `name` via deriveAbbreviation
+   * with collision-resolution against existing active projects.
+   */
+  abbreviation?: string;
 }
 
 export interface UpdateProjectData {
   name?: string;
   projectTypeId?: string;
   status?: string;
+  abbreviation?: string;
 }
 
 export interface ListProjectsFilter {
@@ -39,14 +48,18 @@ export function createProject(db: Database, data: CreateProjectData): Project {
   const id = randomUUID();
   const now = Date.now();
 
-  // Transactional: both rows land or neither does. Without this, a failure
-  // on the heartbeat INSERT would leave an orphaned project with no heartbeat
-  // row — subtle and hard to diagnose. (Code Review #4 F-01)
+  // Transactional: project + heartbeat + abbreviation resolution all land
+  // or nothing does. abbreviation collision-check happens inside the same
+  // transaction as the INSERT to avoid a TOCTOU race where two concurrent
+  // registrations claim the same suffix.
   db.transaction(() => {
+    const baseAbbr = data.abbreviation?.trim() || deriveAbbreviation(data.name);
+    const abbreviation = uniqueAbbreviation(db, baseAbbr);
+
     db.prepare(
-      `INSERT INTO projects (id, name, path, project_type_id, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'active', ?, ?)`,
-    ).run(id, data.name, data.path, data.projectTypeId, now, now);
+      `INSERT INTO projects (id, name, path, project_type_id, status, abbreviation, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`,
+    ).run(id, data.name, data.path, data.projectTypeId, abbreviation, now, now);
 
     db.prepare(
       `INSERT INTO project_heartbeats (project_id, next_check_at, updated_at)
@@ -106,6 +119,16 @@ export function updateProject(
   if (data.status !== undefined) {
     fields.push('status = ?');
     values.push(data.status);
+  }
+  if (data.abbreviation !== undefined) {
+    // Skip collision check when the value isn't changing; otherwise
+    // the row would match itself. Trim to be tolerant of UI whitespace.
+    const requested = data.abbreviation.trim();
+    if (requested !== existing.abbreviation) {
+      const resolved = uniqueAbbreviation(db, requested);
+      fields.push('abbreviation = ?');
+      values.push(resolved);
+    }
   }
 
   values.push(id);
