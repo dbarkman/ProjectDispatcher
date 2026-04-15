@@ -544,6 +544,28 @@ describe('Project Workflow API (per-project templates)', () => {
     expect(libAfter.system_prompt_path).toBe(libraryCodingAgent.system_prompt_path);
   });
 
+  it('renders the project settings page', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: `/ui/projects/${projectId}/settings`,
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/html/);
+    expect(res.body).toContain('Project Settings');
+    // Form points at the PATCH endpoint.
+    expect(res.body).toContain(`hx-patch="/api/projects/${projectId}"`);
+    // Archive button present in the danger zone.
+    expect(res.body).toContain('Archive Project');
+  });
+
+  it('returns 404 for settings on unknown project', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/ui/projects/00000000-0000-0000-0000-000000000000/settings',
+    });
+    expect(res.statusCode).toBe(404);
+  });
+
   it('renders the project-scoped agent edit page for a forked (project-scoped) agent', async () => {
     // Fork a library agent into this project, then GET the project-scoped
     // edit page. Smoke test: 200 + HTML + breadcrumbs include the project name.

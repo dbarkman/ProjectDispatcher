@@ -14,13 +14,12 @@
   <a href="/ui/projects/{{project.id}}/workflow" class="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-gray-200 text-sm rounded-lg transition-colors inline-flex items-center">
     Edit Workflow
   </a>
+  <a href="/ui/projects/{{project.id}}/settings" class="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-gray-200 text-sm rounded-lg transition-colors inline-flex items-center">
+    Project Settings
+  </a>
   <a href="/ui/settings" class="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-gray-200 text-sm rounded-lg transition-colors inline-flex items-center">
     App Settings
   </a>
-  <button onclick="if(confirm('Archive this project? It will be hidden from the project list but tickets are preserved.')) { fetch('/api/projects/{{project.id}}', {method:'DELETE'}).then(r => { if(r.ok) window.location='/ui/projects'; else r.json().then(d => alert(d.error)); }); }"
-    class="px-4 py-2 bg-navy-800 hover:bg-red-900/50 text-gray-400 hover:text-red-400 text-sm rounded-lg transition-colors ml-auto">
-    Archive Project
-  </button>
 </div>
 
 <!-- New Ticket form (hidden by default) -->

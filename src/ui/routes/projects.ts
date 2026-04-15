@@ -187,6 +187,27 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
     });
   });
 
+  // GET /ui/projects/:id/settings — edit project metadata (name, path, abbreviation).
+  // Workflow columns + agents are edited via /ui/projects/:id/workflow.
+  // (Ticket #951cacc2.)
+  app.get<{ Params: { id: string } }>('/ui/projects/:id/settings', async (request, reply) => {
+    const { id } = uuidParam.parse(request.params);
+    const project = getProject(db, id);
+    if (!project) return reply.status(404).send('Project not found');
+
+    return reply.view('project-settings.hbs', {
+      activePage: 'projects',
+      pageTitle: `${project.name} — Settings`,
+      inboxCount: getInboxCount(db) || undefined,
+      breadcrumbs: [
+        { label: 'Projects', href: '/ui/projects' },
+        { label: project.name, href: `/ui/projects/${project.id}` },
+        { label: 'Settings', href: `/ui/projects/${project.id}/settings` },
+      ],
+      project,
+    });
+  });
+
   // GET /ui/projects/:id/agents/:agentId/edit — project-scoped agent edit.
   //
   // Same form as /ui/agent-types/:id but renders under project context:
