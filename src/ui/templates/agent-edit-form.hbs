@@ -73,7 +73,14 @@
      current page (library route). Set = navigate to that URL (project-scoped
      route returns user to the workflow editor). Handlebars escapes attribute
      values, so the URL is safe even if it contains characters that would
-     otherwise need JS-string escaping. -->
+     otherwise need JS-string escaping.
+
+     NOTE: id="agent-edit-redirect" assumes this partial renders at most once
+     per page. Both current callers (library detail page, project-scoped edit
+     page) honor that. When the inline-drawer flow (option C) ships and
+     potentially renders multiple instances, switch to a per-form data attribute
+     (e.g. event.target.closest('form').dataset.redirectUrl) instead of a
+     page-global element id. -->
 <div id="agent-edit-redirect" data-url="{{saveRedirectUrl}}" class="hidden"></div>
 
 <script>
