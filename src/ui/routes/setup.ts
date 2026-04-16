@@ -53,6 +53,10 @@ export async function setupUi(app: FastifyInstance, db: Database, config: Config
   const agentEditFormSrc = await readFile(join(templatesDir, 'agent-edit-form.hbs'), 'utf8');
   Handlebars.registerPartial('agentEditForm', agentEditFormSrc);
 
+  const boardColumnsSrc = await readFile(join(templatesDir, 'board-columns.hbs'), 'utf8');
+  Handlebars.registerPartial('boardColumns', boardColumnsSrc);
+  const boardColumnsTemplate = Handlebars.compile(boardColumnsSrc);
+
   // Template engine
   await app.register(fastifyView, {
     engine: { handlebars: Handlebars },

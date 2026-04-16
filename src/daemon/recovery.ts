@@ -53,6 +53,30 @@ export function recoverFromCrash(db: Database, logger: Logger): RecoveryResult {
     'Orphaned agent runs found — cleaning up',
   );
 
+  // Resolve agent_type_id → human-readable name for recovery comments.
+  // UUIDs in comments are useless to humans reading the inbox.
+  const agentNames = new Map<string, string>();
+  const uniqueAgentIds = [...new Set(orphanedRuns.map((r) => r.agent_type_id))];
+  for (const atId of uniqueAgentIds) {
+    const row = db
+      .prepare('SELECT name FROM agent_types WHERE id = ?')
+      .get(atId) as { name: string } | undefined;
+    agentNames.set(atId, row?.name ?? atId);
+  }
+
+  // Resolve ticket display IDs for readable comments.
+  const ticketDisplayIds = new Map<string, string>();
+  const uniqueTicketIds = [...new Set(orphanedRuns.map((r) => r.ticket_id))];
+  for (const tId of uniqueTicketIds) {
+    const row = db
+      .prepare(
+        `SELECT p.abbreviation, t.sequence_number FROM tickets t
+         JOIN projects p ON p.id = t.project_id WHERE t.id = ?`,
+      )
+      .get(tId) as { abbreviation: string; sequence_number: number } | undefined;
+    ticketDisplayIds.set(tId, row ? `${row.abbreviation}-${row.sequence_number}` : tId.slice(0, 8));
+  }
+
   const now = Date.now();
   let releasedTickets = 0;
   let movedToHuman = 0;
@@ -134,9 +158,11 @@ export function recoverFromCrash(db: Database, logger: Logger): RecoveryResult {
 
       // 4. One block comment per ticket listing all crashed runs.
       const ticketRuns = orphanedRuns.filter((r) => r.ticket_id === run.ticket_id);
+      const agentNameList = [...new Set(ticketRuns.map((r) => agentNames.get(r.agent_type_id) ?? r.agent_type_id))];
+      const displayId = ticketDisplayIds.get(run.ticket_id) ?? run.ticket_id.slice(0, 8);
       const runSummary = ticketRuns.length === 1
-        ? `1 agent run was interrupted`
-        : `${ticketRuns.length} agent runs were interrupted`;
+        ? `${agentNameList[0]} run on ${displayId} was interrupted`
+        : `${ticketRuns.length} agent runs (${agentNameList.join(', ')}) on ${displayId} were interrupted`;
 
       addComment.run(
         randomUUID(),
@@ -146,7 +172,8 @@ export function recoverFromCrash(db: Database, logger: Logger): RecoveryResult {
         `${runSummary} by a daemon crash. The ticket has been moved to your inbox for review.`,
         JSON.stringify({
           recovered_run_ids: ticketRuns.map((r) => r.id),
-          agent_types: [...new Set(ticketRuns.map((r) => r.agent_type_id))],
+          agent_names: agentNameList,
+          ticket_display_id: displayId,
           recovery_at: now,
         }),
         now,

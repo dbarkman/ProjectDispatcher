@@ -146,8 +146,7 @@
     {{#each agentRuns}}
     <div class="card flex items-center justify-between text-sm">
       <div>
-        <span class="text-gray-300 font-medium">{{this.agent_type_id}}</span>
-        <span class="text-gray-500 text-xs ml-2">{{this.shortId}}</span>
+        <span class="text-gray-300 font-medium">{{this.agentName}}</span>
         <span class="ml-2 text-xs
           {{#if (eq this.exit_status 'success')}}text-green-400{{/if}}
           {{#if (eq this.exit_status 'crashed')}}text-red-400{{/if}}

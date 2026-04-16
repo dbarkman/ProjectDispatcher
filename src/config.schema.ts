@@ -48,6 +48,10 @@ export const configSchema = z.object({
       max_concurrent_per_project: z.number().int().positive().default(3),
       max_concurrent_global: z.number().int().positive().default(10),
       default_timeout_minutes: z.number().int().positive().default(30),
+      // Circuit breaker: if an agent has run this many times on a ticket
+      // without the ticket moving to a different column, stop spawning and
+      // auto-move to human. Prevents overnight token burn from stuck agents.
+      circuit_breaker_max_runs: z.number().int().positive().default(3),
     })
     .prefault({}),
   ui: z

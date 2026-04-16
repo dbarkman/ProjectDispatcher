@@ -12,6 +12,7 @@ import {
   listAgentTypesForProject,
 } from '../../db/queries/agent-types.js';
 import { formatTicketDisplayId } from '../../db/queries/abbreviation.js';
+import Handlebars from 'handlebars';
 import { readFile } from 'node:fs/promises';
 import { resolvePromptPath } from '../../services/prompt-file.js';
 import { discoverProjects, folderDisplayName } from '../../daemon/discovery.js';
@@ -185,6 +186,60 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
       // a <script type="application/json"> block.
       agentChoicesJson: JSON.stringify(agentChoices).replace(/</g, '\\u003C'),
     });
+  });
+
+  // GET /ui/projects/:id/board-partial — htmx fragment returning just the kanban
+  // columns. The board page polls this every 10s so ticket movements appear
+  // without F5. Same pattern as the comment-thread auto-refresh.
+  app.get<{ Params: { id: string } }>('/ui/projects/:id/board-partial', async (request, reply) => {
+    const { id } = uuidParam.parse(request.params);
+    const project = getProject(db, id);
+    if (!project) return reply.status(404).send('Project not found');
+
+    const columns = db
+      .prepare(
+        `SELECT column_id, name, agent_type_id, "order"
+         FROM project_type_columns WHERE project_type_id = ? ORDER BY "order"`,
+      )
+      .all(project.project_type_id) as Array<{
+        column_id: string; name: string; agent_type_id: string | null; order: number;
+      }>;
+
+    const tickets = db
+      .prepare(
+        `SELECT id, title, priority, "column", claimed_by_run_id, sequence_number, updated_at
+         FROM tickets WHERE project_id = ? ORDER BY created_at`,
+      )
+      .all(project.id) as Array<{
+        id: string; title: string; priority: string; column: string;
+        claimed_by_run_id: string | null; sequence_number: number; updated_at: number;
+      }>;
+
+    const ticketsByColumn = new Map<string, typeof tickets>();
+    for (const col of columns) ticketsByColumn.set(col.column_id, []);
+    for (const t of tickets) ticketsByColumn.get(t.column)?.push(t);
+
+    const ticketStatuses = getTicketStatuses(db, id);
+    const boardColumns = columns.map((col) => ({
+      ...col,
+      isAgent: col.agent_type_id !== null,
+      isDone: col.column_id === 'done',
+      isHuman: col.column_id === 'human',
+      tickets: (ticketsByColumn.get(col.column_id) ?? []).map((t) => ({
+        ...t,
+        displayId: formatTicketDisplayId(project.abbreviation, t.sequence_number),
+        isClaimed: t.claimed_by_run_id !== null,
+        statusColor: ticketStatuses.get(t.id) ?? 'gray',
+      })),
+    }));
+
+    // Render the boardColumns partial directly — no layout wrapper.
+    const partial = Handlebars.partials['boardColumns'];
+    const template = typeof partial === 'string' ? Handlebars.compile(partial) : partial;
+    return reply
+      .type('text/html; charset=utf-8')
+      .header('Cache-Control', 'no-store')
+      .send(template({ columns: boardColumns }));
   });
 
   // GET /ui/projects/:id/settings — edit project metadata (name, path, abbreviation).

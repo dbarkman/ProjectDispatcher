@@ -80,10 +80,20 @@ export async function ticketUiRoutes(
 
     const comments = decorateComments(ticket.comments);
 
-    // Get agent runs for this ticket (Gap fix #5 — transcript modal)
-    const agentRuns = listAgentRuns(db, { ticketId: id }).map((r) => ({
+    // Get agent runs for this ticket with human-readable agent names
+    const rawRuns = listAgentRuns(db, { ticketId: id });
+    // Resolve agent_type_id → name in one batch
+    const runAgentIds = [...new Set(rawRuns.map((r) => r.agent_type_id))];
+    const agentNameMap = new Map<string, string>();
+    for (const atId of runAgentIds) {
+      const row = db
+        .prepare('SELECT name FROM agent_types WHERE id = ?')
+        .get(atId) as { name: string } | undefined;
+      agentNameMap.set(atId, row?.name ?? atId);
+    }
+    const agentRuns = rawRuns.map((r) => ({
       ...r,
-      shortId: r.id.slice(0, 8),
+      agentName: agentNameMap.get(r.agent_type_id) ?? r.agent_type_id,
       hasTranscript: r.transcript_path !== null,
       durationStr: r.ended_at && r.started_at
         ? formatDuration(r.ended_at - r.started_at)

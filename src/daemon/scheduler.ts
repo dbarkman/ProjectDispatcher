@@ -20,6 +20,7 @@
 
 import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
+import { randomUUID } from 'node:crypto';
 import type { Config } from '../config.schema.js';
 import { runAgent } from './agent-runner.js';
 
@@ -263,6 +264,45 @@ export class Scheduler {
       // Distinguish concurrency errors from other errors — a DB error on
       // ticket 1 shouldn't silently defer tickets 2-N. (Code Review #7 M2)
       for (const ticket of tickets) {
+        // Circuit breaker: count runs since the ticket last moved columns.
+        // If too many runs have happened without progress, the agent is stuck
+        // (MCP failure, prompt confusion, model bug — doesn't matter). Move
+        // the ticket to human and stop burning tokens. Prevents the overnight
+        // 242-run scenario where agents respawned every 5 min accomplishing
+        // nothing. The threshold is configurable (default: 3).
+        const runsSinceLastMove = (this.db.prepare(
+          `SELECT COUNT(*) AS c FROM agent_runs
+           WHERE ticket_id = ? AND started_at > COALESCE(
+             (SELECT MAX(created_at) FROM ticket_comments WHERE ticket_id = ? AND type = 'move'),
+             0
+           )`,
+        ).get(ticket.id, ticket.id) as { c: number }).c;
+
+        if (runsSinceLastMove >= this.config.agents.circuit_breaker_max_runs) {
+          this.logger.warn(
+            { ticketId: ticket.id, runs: runsSinceLastMove, threshold: this.config.agents.circuit_breaker_max_runs },
+            'Circuit breaker tripped — ticket stuck, moving to human',
+          );
+          const now = Date.now();
+          this.db.transaction(() => {
+            this.db.prepare(
+              `UPDATE tickets SET "column" = 'human', claimed_by_run_id = NULL, claimed_at = NULL, updated_at = ?
+               WHERE id = ?`,
+            ).run(now, ticket.id);
+            this.db.prepare(
+              `INSERT INTO ticket_comments (id, ticket_id, type, author, body, meta, created_at)
+               VALUES (?, ?, 'block', 'system:circuit-breaker', ?, ?, ?)`,
+            ).run(
+              randomUUID(),
+              ticket.id,
+              `Agent ran ${runsSinceLastMove} times without moving this ticket. Moved to human for review. Check the agent transcripts to understand why progress stalled.`,
+              JSON.stringify({ runs_since_move: runsSinceLastMove, threshold: this.config.agents.circuit_breaker_max_runs }),
+              now,
+            );
+          })();
+          continue; // Skip spawning, move to next ticket
+        }
+
         try {
           await runAgent(
             { projectId, agentTypeId: col.agent_type_id, ticketId: ticket.id },

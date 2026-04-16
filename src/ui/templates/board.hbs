@@ -227,53 +227,13 @@
   }
 </script>
 
-<!-- Kanban board -->
-<div class="flex gap-4 overflow-x-auto pb-4" style="min-height: 400px;">
-  {{#each columns}}
-  <div class="flex-shrink-0 w-72">
-    <div class="flex items-center justify-between mb-3 px-1">
-      <h3 class="text-sm font-semibold
-        {{#if this.isHuman}}text-gray-300{{/if}}
-        {{#if this.isAgent}}text-accent{{/if}}
-        {{#if this.isDone}}text-green-400{{/if}}
-      ">
-        {{this.name}}
-      </h3>
-      <span class="text-xs text-gray-500">{{this.tickets.length}}</span>
-    </div>
-    <div class="space-y-2 min-h-[200px] rounded-lg p-2 transition-all
-      {{#if this.isHuman}}bg-navy-900/50{{/if}}
-      {{#if this.isAgent}}bg-navy-800/30 border border-accent/10{{/if}}
-      {{#if this.isDone}}bg-navy-900/30 border border-green-900/20{{/if}}
-    "
-      data-column="{{this.column_id}}"
-      ondragover="onDragOver(event)"
-      ondragleave="onDragLeave(event)"
-      ondrop="onDrop(event, '{{this.column_id}}')"
-    >
-      {{#each this.tickets}}
-      <div class="card cursor-grab hover:border-accent/30 active:cursor-grabbing"
-           draggable="true"
-           ondragstart="onDragStart(event, '{{this.id}}')"
-           ondragend="onDragEnd(event)"
-           onclick="if(!window.getSelection().toString()) window.location='/ui/tickets/{{this.id}}'">
-        <div class="flex items-start justify-between gap-2">
-          <p class="text-sm text-gray-200 leading-snug">{{this.title}}</p>
-          <span class="priority-dot priority-{{this.priority}} shrink-0 mt-1"></span>
-        </div>
-        <div class="flex items-center gap-2 mt-2 text-xs text-gray-500">
-          <span class="status-dot status-dot-{{this.statusColor}}" title="Status: {{this.statusColor}}"></span>
-          <span>{{this.displayId}}</span>
-          {{#if this.isClaimed}}
-          <span class="text-accent" title="Agent is working on this">&#9881;</span>
-          {{/if}}
-          <span class="ml-auto">{{relativeTime this.updated_at}}</span>
-        </div>
-      </div>
-      {{else}}
-      <div class="text-xs text-gray-600 text-center py-8">No tickets</div>
-      {{/each}}
-    </div>
-  </div>
-  {{/each}}
+<!-- Kanban board — auto-refreshes every 10s when tab is visible so ticket
+     column movements appear without manual F5. Same htmx pattern as the
+     comment-thread auto-refresh on the ticket detail page. -->
+<div id="board-columns"
+     class="flex gap-4 overflow-x-auto pb-4" style="min-height: 400px;"
+     hx-get="/ui/projects/{{project.id}}/board-partial"
+     hx-trigger="every 10s [document.visibilityState === 'visible']"
+     hx-swap="innerHTML">
+  {{> boardColumns}}
 </div>
