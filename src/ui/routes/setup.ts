@@ -76,7 +76,7 @@ export async function setupUi(app: FastifyInstance, db: Database, config: Config
 
   // Mount UI page routes
   await inboxRoutes(app, db);
-  await projectUiRoutes(app, db, config);
+  await projectUiRoutes(app, db, config, { boardColumnsTemplate });
   await ticketUiRoutes(app, db, { commentThreadTemplate });
   await agentTypeUiRoutes(app, db);
   await settingsUiRoutes(app, config);

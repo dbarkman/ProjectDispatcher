@@ -12,7 +12,8 @@ import {
   listAgentTypesForProject,
 } from '../../db/queries/agent-types.js';
 import { formatTicketDisplayId } from '../../db/queries/abbreviation.js';
-import Handlebars from 'handlebars';
+// Handlebars import no longer needed — boardColumnsTemplate is pre-compiled
+// and injected from setup.ts.
 import { readFile } from 'node:fs/promises';
 import { resolvePromptPath } from '../../services/prompt-file.js';
 import { discoverProjects, folderDisplayName } from '../../daemon/discovery.js';
@@ -22,7 +23,16 @@ import type { Config } from '../../config.schema.js';
 
 const uuidParam = z.object({ id: z.string().uuid() });
 
-export async function projectUiRoutes(app: FastifyInstance, db: Database, config?: Config): Promise<void> {
+interface ProjectRoutesDeps {
+  boardColumnsTemplate: HandlebarsTemplateDelegate;
+}
+
+export async function projectUiRoutes(
+  app: FastifyInstance,
+  db: Database,
+  config: Config | undefined,
+  deps: ProjectRoutesDeps,
+): Promise<void> {
   // GET /ui/projects — projects list with register form
   app.get('/ui/projects', async (request, reply) => {
     const projects = listProjects(db);
@@ -233,13 +243,10 @@ export async function projectUiRoutes(app: FastifyInstance, db: Database, config
       })),
     }));
 
-    // Render the boardColumns partial directly — no layout wrapper.
-    const partial = Handlebars.partials['boardColumns'];
-    const template = typeof partial === 'string' ? Handlebars.compile(partial) : partial;
     return reply
       .type('text/html; charset=utf-8')
       .header('Cache-Control', 'no-store')
-      .send(template({ columns: boardColumns }));
+      .send(deps.boardColumnsTemplate({ columns: boardColumns }));
   });
 
   // GET /ui/projects/:id/settings — edit project metadata (name, path, abbreviation).
