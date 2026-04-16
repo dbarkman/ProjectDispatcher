@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { writeFile, mkdir, unlink } from 'node:fs/promises';
-import { createWriteStream, existsSync } from 'node:fs';
+import { mkdir } from 'node:fs/promises';
+import { createWriteStream } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -19,26 +19,8 @@ const ARTIFACTS_DIR = join(DEFAULT_TASKS_DIR, 'artifacts', 'runs');
 
 const allowedToolsSchema = z.array(z.string().min(1));
 
-/**
- * Pick the right command for spawning the MCP server.
- *   - Prod (npm run build): dist/mcp/server.js exists; spawn `node` directly.
- *     No tsx runtime needed in production install — keeps the dependency
- *     surface tight (tsx stays in devDependencies).
- *   - Dev (tsx-watch daemon): no dist; spawn via `npx tsx` against the .ts
- *     source. Local node_modules/.bin is on PATH because the daemon was
- *     launched via `npm run dev`, so npx finds tsx without a registry hit.
- *
- * Resolved once at module load (one sync existsSync at startup, before the
- * server binds — same pattern as runMigrations sync I/O).
- */
-function resolveMcpServerSpawn(): { command: string; args: string[] } {
-  const distPath = resolve(join(__dirname, '..', 'mcp', 'server.js'));
-  if (existsSync(distPath)) {
-    return { command: 'node', args: [distPath] };
-  }
-  const srcPath = resolve(join(__dirname, '..', 'mcp', 'server.ts'));
-  return { command: 'npx', args: ['tsx', srcPath] };
-}
+/** Path to the ticket CLI script that agents call via Bash to read/comment/move tickets. */
+const TICKET_CLI_PATH = resolve(join(__dirname, '..', 'cli', 'ticket.cjs'));
 
 export interface AgentRunResult {
   runId: string;
@@ -92,11 +74,10 @@ function untrackRun(projectId: string, runId: string): void {
  *   1. Load agent type, validate concurrency limits.
  *   2. Create agent_runs DB row (exit_status = 'running').
  *   3. Build the system prompt via prompt-builder.
- *   4. Write a temporary MCP config file.
- *   5. Spawn `claude -p` with scrubbed env (whitelist-only).
- *   6. Pipe stdout/stderr to a transcript file.
- *   7. Enforce timeout: SIGTERM → 10s grace → SIGKILL.
- *   8. On exit: update agent_runs, release claim on failure, add block comment.
+ *   4. Spawn `claude -p` with ticket CLI env vars.
+ *   5. Pipe stdout/stderr to a transcript file.
+ *   6. Enforce timeout: SIGTERM → 10s grace → SIGKILL.
+ *   7. On exit: update agent_runs, release claim on failure, add block comment.
  */
 export async function runAgent(
   input: AgentRunInput,
@@ -143,9 +124,6 @@ export async function runAgent(
   const childLogger = logger.child({ runId, agentType: agentTypeId, project: projectId });
   childLogger.info({ ticketId }, 'Agent run starting');
 
-  // MCP config temp file path — cleaned up in finally block
-  let mcpConfigPath: string | null = null;
-
   try {
     // Build the system prompt
     const prompt = await buildPrompt({
@@ -156,32 +134,7 @@ export async function runAgent(
       db,
     });
 
-    // Write MCP config to a temp file
-    mcpConfigPath = join(ARTIFACTS_DIR, `${runId}-mcp.json`);
     await mkdir(ARTIFACTS_DIR, { recursive: true });
-
-    // Build the MCP server spawn config. Prefer the compiled JS in prod
-    // (no TS runtime needed) and fall back to tsx + .ts in dev where the
-    // tsx-watch daemon never emits dist/. Earlier code hardcoded server.js
-    // which doesn't exist in dev, so agents got "MCP tools not available"
-    // from a silent spawn failure. (Ticket #5e892a59.)
-    const spawnCmd = resolveMcpServerSpawn();
-    const mcpConfig = {
-      mcpServers: {
-        dispatch: {
-          command: spawnCmd.command,
-          args: spawnCmd.args,
-          env: {
-            DISPATCH_RUN_ID: runId,
-            DISPATCH_TICKET_ID: ticketId,
-            DISPATCH_PROJECT_ID: projectId,
-            DISPATCH_AGENT_TYPE: agentTypeId,
-            DISPATCH_DB_PATH: DEFAULT_DB_PATH,
-          },
-        },
-      },
-    };
-    await writeFile(mcpConfigPath, JSON.stringify(mcpConfig), 'utf8');
 
     // Set up transcript file
     const transcriptPath = join(ARTIFACTS_DIR, `${runId}.log`);
@@ -190,12 +143,14 @@ export async function runAgent(
     // Parse + validate allowed_tools (Review #6 M3 — Zod at every boundary)
     const tools = allowedToolsSchema.parse(JSON.parse(agentType.allowed_tools));
 
-    // Build the claude command
+    // Build the claude command — no MCP. Agents interact with tickets via
+    // the ticket CLI script (src/cli/ticket.cjs) called through Bash.
+    // The CLI is a thin Node.js wrapper around parameterized SQLite queries.
+    // Env vars tell the script where the DB is and who's calling.
     const claudeArgs = [
       '-p', prompt,
       '--model', agentType.model,
       '--permission-mode', agentType.permission_mode,
-      '--mcp-config', mcpConfigPath,
       '--allowedTools', tools.join(','),
       '--output-format', 'text',
     ];
@@ -212,12 +167,27 @@ export async function runAgent(
     // default. A future config option can offer a scrubbed whitelist mode
     // for users who want it.
 
-    // Spawn the subprocess
+    // Build the author string for ticket CLI comments
+    const authorString = `agent:${agentTypeId}:${runId}`;
+
+    // Spawn the subprocess. Env vars give the ticket CLI script everything
+    // it needs to read/comment/move tickets via direct DB access.
     const result = await new Promise<AgentRunResult>((resolvePromise) => {
       const child: ChildProcess = spawn(config.claude_cli.binary_path, claudeArgs, {
         cwd: project.path,
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: { ...process.env, NODE_ENV: 'production' },
+        env: {
+          ...process.env,
+          NODE_ENV: 'production',
+          DISPATCH_DB_PATH: DEFAULT_DB_PATH,
+          DISPATCH_TICKET_ID: ticketId,
+          DISPATCH_PROJECT_ID: projectId,
+          DISPATCH_AGENT_TYPE: agentTypeId,
+          DISPATCH_RUN_ID: runId,
+          DISPATCH_AUTHOR: authorString,
+          DISPATCH_PORT: String(config.ui.port),
+          DISPATCH_TICKET_BIN: TICKET_CLI_PATH,
+        },
       });
 
       child.stdout?.pipe(transcriptStream);
@@ -335,13 +305,5 @@ export async function runAgent(
     return result;
   } finally {
     untrackRun(projectId, runId);
-    // Clean up temp MCP config (Review #6 LOW-03 — moved to finally)
-    if (mcpConfigPath) {
-      try {
-        await unlink(mcpConfigPath);
-      } catch {
-        // Best-effort cleanup
-      }
-    }
   }
 }

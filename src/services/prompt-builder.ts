@@ -112,26 +112,55 @@ export async function buildPrompt(input: PromptBuildInput): Promise<string> {
 
   // 4. Ticket context
   sections.push('## Your Assignment');
-  sections.push(`You have been assigned a ticket. Use the MCP tools to interact with it.`);
-  sections.push(`- Call \`read_my_ticket\` to see the full ticket details and comment thread.`);
+  sections.push(`You have been assigned a ticket.`);
   sections.push(`- Ticket title: "${ticket.title}"`);
+  sections.push(`- Ticket ID: ${ticket.id}`);
   sections.push(`- Current column: ${ticket.column}`);
   sections.push(`- Run ID: ${runId}`);
   sections.push('');
 
-  // 5. Output instructions
+  // 5. Ticket CLI — how agents interact with tickets (replaces MCP)
+  sections.push('## Ticket CLI');
+  sections.push('Use the ticket CLI via Bash to read your ticket, add comments, and move it when done.');
+  sections.push('The CLI is a Node.js script. All env vars are pre-set — just run the commands.');
+  sections.push('');
+  sections.push('```bash');
+  sections.push('# Read your ticket (full details + comment thread):');
+  sections.push(`node $DISPATCH_TICKET_BIN read ${ticket.id}`);
+  sections.push('');
+  sections.push('# Add a comment (types: comment, journal, block, finding, complete):');
+  sections.push(`node $DISPATCH_TICKET_BIN comment ${ticket.id} journal "your message here"`);
+  sections.push('');
+  sections.push('# Attach a code review finding:');
+  sections.push(`node $DISPATCH_TICKET_BIN finding ${ticket.id} medium "Title" "Description with file:line refs"`);
+  sections.push('');
+  sections.push('# Move ticket to next column when done:');
+  if (nextColumn) {
+    sections.push(`node $DISPATCH_TICKET_BIN move ${ticket.id} ${nextColumn.column_id} "Summary of what you did"`);
+  } else {
+    sections.push(`node $DISPATCH_TICKET_BIN move ${ticket.id} <column> "Summary of what you did"`);
+  }
+  sections.push('');
+  sections.push('# Move to human if blocked:');
+  sections.push(`node $DISPATCH_TICKET_BIN move ${ticket.id} human "Blocked: reason here"`);
+  sections.push('```');
+  sections.push('');
+  sections.push('**Read your ticket first** — it has the full description and any prior comments from other agents.');
+  sections.push('');
+
+  // 6. Output instructions
   sections.push('## When You Are Done');
   if (nextColumn) {
     sections.push(
-      `When your work is complete, call \`move_to_column\` with column \`${nextColumn.column_id}\` ("${nextColumn.name}") and a summary comment.`,
+      `Move the ticket to \`${nextColumn.column_id}\` ("${nextColumn.name}") with a summary comment.`,
     );
   } else {
     sections.push(
-      'When your work is complete, call `move_to_column` with the appropriate next column and a summary comment.',
+      'Move the ticket to the appropriate next column with a summary comment.',
     );
   }
   sections.push(
-    'If you are blocked and cannot proceed, move the ticket to the `human` column with a clear, specific question. Do not leave the ticket sitting in your column.',
+    'If you are blocked and cannot proceed, move the ticket to `human` with a clear, specific question. Do not leave the ticket sitting in your column.',
   );
   sections.push('');
 
