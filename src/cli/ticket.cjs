@@ -22,12 +22,11 @@
 
 'use strict';
 
-const path = require('path');
-
-// Resolve better-sqlite3 relative to this script's location, not CWD.
-// The agent's CWD is the project being worked on (e.g. HandyManagerHub),
-// which doesn't have better-sqlite3. ProjectDispatcher's node_modules does.
-const Database = require(path.resolve(__dirname, '../node_modules/better-sqlite3'));
+// Node's require() walks up directories from __dirname (src/cli/) to find
+// node_modules/. It reaches ProjectDispatcher/node_modules/ at the project
+// root — works regardless of the agent's CWD (which is the project being
+// worked on, not ProjectDispatcher).
+const Database = require('better-sqlite3');
 
 const dbPath = requireEnv('DISPATCH_DB_PATH');
 const author = requireEnv('DISPATCH_AUTHOR');
@@ -52,12 +51,14 @@ const commands = {
 
   thread() {
     const [ticketId] = requireArgs(args, 1, 'thread <ticket-id>');
+    verifyTicketScope(ticketId);
     const comments = db.prepare('SELECT * FROM ticket_comments WHERE ticket_id = ? ORDER BY created_at').all(ticketId);
     console.log(JSON.stringify(comments, null, 2));
   },
 
   comment() {
     const [ticketId, type, body] = requireArgs(args, 3, 'comment <ticket-id> <type> <body>');
+    verifyTicketScope(ticketId);
     validateCommentType(type);
     const id = randomId();
     const now = Date.now();
@@ -70,6 +71,7 @@ const commands = {
 
   finding() {
     const [ticketId, severity, title, body] = requireArgs(args, 4, 'finding <ticket-id> <severity> <title> <body>');
+    verifyTicketScope(ticketId);
     const validSeverities = ['critical', 'high', 'medium', 'low'];
     if (!validSeverities.includes(severity)) {
       fail(`Invalid severity: ${severity}. Must be one of: ${validSeverities.join(', ')}`);
@@ -158,7 +160,9 @@ const commands = {
   },
 };
 
-if (!command || !commands[command]) {
+// Guard: only dispatch to explicitly defined commands. Object.hasOwn
+// prevents prototype pollution (e.g. command='__proto__' or 'toString').
+if (!command || !Object.hasOwn(commands, command)) {
   console.error(`Usage: ticket.cjs <command> [args]`);
   console.error(`Commands: ${Object.keys(commands).join(', ')}`);
   process.exit(1);
@@ -198,6 +202,11 @@ function fail(msg) {
 
 function randomId() {
   return require('crypto').randomUUID();
+}
+
+function verifyTicketScope(ticketId) {
+  const row = db.prepare('SELECT 1 FROM tickets WHERE id = ? AND project_id = ?').get(ticketId, projectId);
+  if (!row) fail(`Ticket not found or not in this project: ${ticketId}`);
 }
 
 function validateCommentType(type) {

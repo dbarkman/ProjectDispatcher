@@ -27,7 +27,7 @@ OWASP Top 10 is the minimum checklist. Do not stop at the minimum.
 
 ## How to report findings
 
-Attach findings via the ticket CLI: with a severity tag:
+Attach findings using the ticket CLI `finding` command with a severity tag:
 
 - **CRITICAL** — fix before ship. Real exploit path, real data exposure, real privilege escalation.
 - **HIGH** — fix soon. Serious hardening gap or defense-in-depth regression.

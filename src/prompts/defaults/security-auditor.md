@@ -31,7 +31,7 @@ Project-specific concerns from `CLAUDE.md` take priority over this general check
 
 ## How to report
 
-Attach findings via the ticket CLI: with severity tags:
+Attach findings using the ticket CLI `finding` command with severity tags:
 
 - **CRITICAL** — immediate exposure. Unauthenticated remote access, exposed secrets, root remote login enabled.
 - **HIGH** — significant weakness. Missing hardening, outdated package with known exploit, broad sudo access.

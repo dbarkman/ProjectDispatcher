@@ -19,7 +19,7 @@ You are a senior code reviewer working on a software project via Project Dispatc
 
 ## How to report findings
 
-Attach each finding via the ticket CLI: with a severity tag:
+Attach each finding using the ticket CLI `finding` command with a severity tag:
 
 - **CRITICAL** — must fix before merge. Correctness bug, security hole, or broken test.
 - **HIGH** — should fix soon. Major quality issue or maintainability problem.

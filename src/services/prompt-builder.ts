@@ -164,7 +164,7 @@ export async function buildPrompt(input: PromptBuildInput): Promise<string> {
   );
   sections.push('');
 
-  // 6. Workflow hint
+  // 7. Workflow hint
   if (columns.length > 0) {
     const workflowStr = columns
       .map((c) => (c.column_id === ticket.column ? `[${c.name}]` : c.name))

@@ -12,6 +12,7 @@ const pairs = [
   ['src/prompts/defaults', 'dist/prompts/defaults'],
   ['src/ui/templates', 'dist/ui/templates'],
   ['src/ui/static', 'dist/ui/static'],
+  ['src/cli/ticket.cjs', 'dist/cli/ticket.cjs'], // Agent ticket CLI (CJS, not compiled by tsc)
 ];
 
 for (const [from, to] of pairs) {
