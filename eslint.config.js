@@ -6,7 +6,7 @@ import eslintConfigPrettier from 'eslint-config-prettier';
 
 export default tseslint.config(
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'scripts/**'],
+    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'scripts/**', 'src/ui/static/vendor/**'],
   },
   ...tseslint.configs.recommended,
   eslintConfigPrettier,
