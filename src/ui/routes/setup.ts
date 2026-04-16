@@ -13,6 +13,7 @@ import fastifyStatic from '@fastify/static';
 import Handlebars from 'handlebars';
 import type { Database } from 'better-sqlite3';
 import type { Config } from '../../config.schema.js';
+import { displayPath } from '../../display-path.js';
 import { inboxRoutes } from './inbox.js';
 import { projectUiRoutes } from './projects.js';
 import { ticketUiRoutes } from './tickets.js';
@@ -23,6 +24,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Register Handlebars helpers
 Handlebars.registerHelper('eq', (a: unknown, b: unknown) => a === b);
+Handlebars.registerHelper('displayPath', (path: string) => displayPath(path));
 Handlebars.registerHelper('relativeTime', (timestamp: number) => {
   const diff = Date.now() - timestamp;
   const mins = Math.floor(diff / 60000);
