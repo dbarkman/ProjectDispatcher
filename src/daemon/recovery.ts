@@ -83,6 +83,13 @@ export function recoverFromCrash(db: Database, logger: Logger): RecoveryResult {
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     );
 
+    // Track which tickets we've already moved + commented on in this
+    // recovery pass. When multiple runs crashed for the same ticket
+    // (e.g. daemon restarted several times quickly), emit one summary
+    // comment per ticket instead of spamming N identical blocks.
+    // Overnight this bug produced 5-6 duplicate block comments per ticket.
+    const commentedTickets = new Set<string>();
+
     for (const run of orphanedRuns) {
       // 1. Mark the run as crashed
       updateRun.run(
@@ -97,10 +104,14 @@ export function recoverFromCrash(db: Database, logger: Logger): RecoveryResult {
         releasedTickets += released.changes;
       }
 
+      // 3+4: Move + comment — deduplicated per ticket. If we already
+      // handled this ticket for an earlier orphaned run in this pass,
+      // skip the move and the block comment. The run is still marked
+      // crashed (step 1) so it's tracked in agent_runs history.
+      if (commentedTickets.has(run.ticket_id)) continue;
+      commentedTickets.add(run.ticket_id);
+
       // 3. Move ticket to 'human' column if it's not already there.
-      // Per DESIGN.md §11.7: crashed tickets go back to Human so they
-      // surface in the inbox. Without this, the ticket stays in the agent
-      // column and the human never sees it. (Gap fix item #1)
       const ticketRow = getTicketColumn.get(run.ticket_id) as
         | { column: string }
         | undefined;
@@ -110,7 +121,6 @@ export function recoverFromCrash(db: Database, logger: Logger): RecoveryResult {
         moveToHuman.run(now, run.ticket_id);
         movedToHuman++;
 
-        // Record the move
         addComment.run(
           randomUUID(),
           run.ticket_id,
@@ -122,16 +132,21 @@ export function recoverFromCrash(db: Database, logger: Logger): RecoveryResult {
         );
       }
 
-      // 4. Add a block comment explaining what happened
+      // 4. One block comment per ticket listing all crashed runs.
+      const ticketRuns = orphanedRuns.filter((r) => r.ticket_id === run.ticket_id);
+      const runSummary = ticketRuns.length === 1
+        ? `1 agent run was interrupted`
+        : `${ticketRuns.length} agent runs were interrupted`;
+
       addComment.run(
         randomUUID(),
         run.ticket_id,
         'block',
         'system:recovery',
-        `Agent run ${run.id} (${run.agent_type_id}) was interrupted by a daemon crash. The ticket has been moved to your inbox for review.`,
+        `${runSummary} by a daemon crash. The ticket has been moved to your inbox for review.`,
         JSON.stringify({
-          recovered_run_id: run.id,
-          agent_type: run.agent_type_id,
+          recovered_run_ids: ticketRuns.map((r) => r.id),
+          agent_types: [...new Set(ticketRuns.map((r) => r.agent_type_id))],
           recovery_at: now,
         }),
         now,

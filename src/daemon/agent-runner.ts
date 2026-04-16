@@ -244,27 +244,41 @@ export async function runAgent(
         }, 10_000);
       }, timeoutMs);
 
+      // Capture exit code + signal from 'exit' (fires when process ends).
+      // Resolve the promise from 'close' (fires when process ends AND all
+      // stdio pipes have flushed). Using 'exit' alone caused transcriptStream
+      // to end() before stdout/stderr data was fully consumed → empty logs.
+      // (Overnight 242 runs had 0-byte transcripts from this bug.)
+      let exitCode: number | null = null;
+      let exitSignal: string | null = null;
+
       child.on('exit', (code, signal) => {
         exited = true;
         clearTimeout(timer);
         if (killTimer) clearTimeout(killTimer);
+        exitCode = code;
+        exitSignal = signal;
+      });
+
+      child.on('close', () => {
+        // All stdio streams fully drained. Safe to end the transcript now.
         transcriptStream.end();
 
         const durationMs = Date.now() - startedAt;
         let exitStatus: AgentRunResult['exitStatus'];
         let errorMessage: string | null = null;
 
-        if (signal === 'SIGTERM' || signal === 'SIGKILL') {
+        if (exitSignal === 'SIGTERM' || exitSignal === 'SIGKILL') {
           exitStatus = 'timeout';
           errorMessage = `Timed out after ${agentType.timeout_minutes} minutes`;
-        } else if (code !== 0) {
+        } else if (exitCode !== 0) {
           exitStatus = 'crashed';
-          errorMessage = `Exited with code ${code ?? 'unknown'}`;
+          errorMessage = `Exited with code ${exitCode ?? 'unknown'}`;
         } else {
           exitStatus = 'success';
         }
 
-        resolvePromise({ runId, exitStatus, exitCode: code, errorMessage, durationMs });
+        resolvePromise({ runId, exitStatus, exitCode, errorMessage, durationMs });
       });
 
       child.on('error', (err) => {

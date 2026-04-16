@@ -60,8 +60,40 @@ export class Scheduler {
   /**
    * Start the scheduler: load all active projects and schedule their
    * first heartbeat based on the DB state.
+   *
+   * Repairs missing heartbeat rows first — if a project is active but
+   * has no project_heartbeats row (e.g. the row was lost to a failed
+   * transaction, or the project was inserted by a migration/import
+   * that didn't create the row), we insert a fresh row so the project
+   * isn't silently skipped. Without this, projectCount=0 and the
+   * scheduler does nothing until a manual /api/projects/:id/wake.
+   * (Ticket pd-10.)
    */
   start(): void {
+    // Repair: ensure every active project has a heartbeat row.
+    const now = Date.now();
+    const orphans = this.db
+      .prepare(
+        `SELECT p.id FROM projects p
+         LEFT JOIN project_heartbeats ph ON ph.project_id = p.id
+         WHERE p.status = 'active' AND ph.project_id IS NULL`,
+      )
+      .all() as Array<{ id: string }>;
+
+    if (orphans.length > 0) {
+      const insert = this.db.prepare(
+        `INSERT INTO project_heartbeats (project_id, next_check_at, updated_at)
+         VALUES (?, ?, ?)`,
+      );
+      this.db.transaction(() => {
+        for (const { id } of orphans) {
+          insert.run(id, now + 5000, now);
+          this.logger.warn({ projectId: id }, 'Created missing heartbeat row for active project');
+        }
+      })();
+    }
+
+    // Load all heartbeat rows and schedule timers.
     const projects = this.db
       .prepare(
         `SELECT ph.* FROM project_heartbeats ph
