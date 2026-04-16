@@ -3,6 +3,7 @@ import type { Command } from 'commander';
 import Table from 'cli-table3';
 import chalk from 'chalk';
 import { api } from '../api-client.js';
+import { displayPath } from '../../display-path.js';
 
 interface Project {
   id: string;
@@ -49,7 +50,7 @@ export function registerProjectCommands(program: Command): void {
 
       for (const p of data) {
         const statusColor = p.status === 'active' ? chalk.green : p.status === 'missing' ? chalk.red : chalk.dim;
-        table.push([p.name, p.project_type_id, statusColor(p.status), chalk.dim(p.path)]);
+        table.push([p.name, p.project_type_id, statusColor(p.status), chalk.dim(displayPath(p.path))]);
       }
 
       console.log(table.toString());
@@ -64,7 +65,7 @@ export function registerProjectCommands(program: Command): void {
       console.log(chalk.bold(p.name));
       console.log(`  Type: ${p.project_type_id}`);
       console.log(`  Status: ${p.status}`);
-      console.log(`  Path: ${p.path}`);
+      console.log(`  Path: ${displayPath(p.path)}`);
       console.log(`  ID: ${chalk.dim(p.id)}`);
     });
 
