@@ -969,3 +969,38 @@ describe('Attachments API', () => {
     expect(file.statusCode).toBe(404);
   });
 });
+
+describe('Vendor static assets', () => {
+  it('serves vendored htmx', async () => {
+    const res = await app.inject({ method: 'GET', url: '/static/vendor/htmx-2.0.4.js' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/javascript/);
+    expect(res.body).toContain('htmx');
+  });
+
+  it('serves vendored htmx-json-enc extension', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/static/vendor/htmx-json-enc-2.0.3.js',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/javascript/);
+  });
+
+  it('serves vendored tailwind', async () => {
+    const res = await app.inject({ method: 'GET', url: '/static/vendor/tailwind.js' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toMatch(/javascript/);
+    expect(res.body).toContain('tailwind');
+  });
+
+  it('layout references local vendor scripts not CDN', async () => {
+    const res = await app.inject({ method: 'GET', url: '/' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain('/static/vendor/tailwind.js');
+    expect(res.body).toContain('/static/vendor/htmx-2.0.4.js');
+    expect(res.body).toContain('/static/vendor/htmx-json-enc-2.0.3.js');
+    expect(res.body).not.toContain('cdn.tailwindcss.com');
+    expect(res.body).not.toContain('unpkg.com');
+  });
+});
