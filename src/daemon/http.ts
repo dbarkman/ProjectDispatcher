@@ -51,6 +51,35 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
     loggerInstance: logger as FastifyBaseLogger,
   });
 
+  // --- DNS rebinding protection ---
+  // Reject requests whose Host header hostname is not localhost / 127.0.0.1 /
+  // [::1]. A malicious page served from attacker.com that DNS-rebinds to
+  // 127.0.0.1 sends Host: attacker.com — the hostname check catches that.
+  // Port is intentionally not checked: the security value is entirely in the
+  // hostname, and Fastify's inject() sends "localhost:80" by default which
+  // would break every integration test for no real security gain.
+  const ALLOWED_HOSTNAMES = new Set(['127.0.0.1', 'localhost', '[::1]']);
+  app.addHook('onRequest', async (request, reply) => {
+    const host = request.headers.host;
+    if (!host) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+    // Extract hostname — strip port suffix. IPv6 brackets handled: [::1]:5757
+    const colonIdx = host.lastIndexOf(':');
+    const hostname = colonIdx > 0 && !host.endsWith(']')
+      ? host.slice(0, colonIdx)
+      : host;
+    if (!ALLOWED_HOSTNAMES.has(hostname)) {
+      return reply.status(403).send({ error: 'Forbidden' });
+    }
+  });
+
+  // Security headers applied to every response.
+  app.addHook('onSend', async (_request, reply) => {
+    reply.header('X-Content-Type-Options', 'nosniff');
+    reply.header('Referrer-Policy', 'same-origin');
+  });
+
   // Multipart support for file uploads (attachments).
   await app.register(multipart, {
     limits: {
