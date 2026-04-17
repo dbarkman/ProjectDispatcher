@@ -76,7 +76,6 @@ describe('loadConfig', () => {
     expect(config.discovery.root_path).toBe(join(homedir(), 'Development'));
     expect(config.discovery.ignore).toEqual(['.tasks', 'Archive', 'tmp']);
     expect(config.claude_cli.binary_path).toBe('claude');
-    expect(config.claude_cli.default_model).toBe('claude-sonnet-4-6');
   });
 
   it('merges partial file values with defaults for omitted fields', () => {
@@ -114,12 +113,12 @@ describe('loadConfig', () => {
     expect(() => loadConfig(path)).toThrow(/Failed to parse/);
   });
 
-  it('rejects an unknown Claude model in claude_cli.default_model', () => {
+  it('rejects an unknown Claude model in ai.default_model', () => {
     const dir = mkTmp();
     const path = join(dir, 'config.json');
-    writeFileSync(path, JSON.stringify({ claude_cli: { default_model: 'claude-opus-4-7' } }));
+    writeFileSync(path, JSON.stringify({ ai: { default_model: 'gpt-4-turbo' } }));
 
-    expect(() => loadConfig(path)).toThrow(/claude_cli\.default_model/);
+    expect(() => loadConfig(path)).toThrow(/ai\.default_model/);
   });
 
   it('expands `~/` in discovery.root_path after parsing', () => {

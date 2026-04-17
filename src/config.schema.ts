@@ -78,7 +78,6 @@ export const configSchema = z.object({
   claude_cli: z
     .object({
       binary_path: z.string().default('claude'),
-      default_model: z.enum(CLAUDE_MODELS).default('claude-sonnet-4-6'),
     })
     .prefault({}),
   ai: z

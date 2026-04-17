@@ -10,7 +10,7 @@
  * want to support, add it here. The friction is the feature.
  *
  * Both the seed data (agent_types.model) and the config loader
- * (claude_cli.default_model) reference this as the single source of truth.
+ * (ai.default_model) reference this as the single source of truth.
  */
 export const CLAUDE_MODELS = [
   'claude-opus-4-6',

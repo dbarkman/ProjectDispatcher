@@ -1,7 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { readFile, writeFile, chmod } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
+import { readFile, writeFile, access, rename } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -31,13 +30,13 @@ export async function aiConfigRoutes(
 
   // GET /api/config/ai/detect-oauth — check if ~/.claude/ has tokens
   app.get('/api/config/ai/detect-oauth', async () => {
-    const claudeDir = join(homedir(), '.claude');
-    const hasDir = existsSync(claudeDir);
-    if (!hasDir) return { detected: false };
-
-    const credentialsPath = join(claudeDir, 'credentials.json');
-    const hasCredentials = existsSync(credentialsPath);
-    return { detected: hasCredentials };
+    const credentialsPath = join(homedir(), '.claude', 'credentials.json');
+    try {
+      await access(credentialsPath);
+      return { detected: true };
+    } catch {
+      return { detected: false };
+    }
   });
 
   // POST /api/config/ai — save AI config + run connection test
@@ -83,8 +82,9 @@ export async function aiConfigRoutes(
 
     current.ai = aiSection;
 
-    await writeFile(configPath, JSON.stringify(current, null, 2) + '\n', 'utf8');
-    await chmod(configPath, 0o600);
+    const tmpPath = configPath + '.tmp';
+    await writeFile(tmpPath, JSON.stringify(current, null, 2) + '\n', { encoding: 'utf8', mode: 0o600 });
+    await rename(tmpPath, configPath);
 
     const reloaded = reloadConfig(configPath);
     setConfig(reloaded);
@@ -134,7 +134,7 @@ function runConnectionTest(
   baseUrl?: string,
 ): Promise<TestResult> {
   return new Promise((resolve) => {
-    const env: Record<string, string> = { ...process.env } as Record<string, string>;
+    const env = { ...process.env };
 
     if (authMethod === 'api_key' && apiKey) {
       env.ANTHROPIC_API_KEY = apiKey;
