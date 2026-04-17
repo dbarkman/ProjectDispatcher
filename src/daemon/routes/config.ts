@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { readFile, writeFile } from 'node:fs/promises';
 import { reloadConfig, DEFAULT_CONFIG_PATH } from '../../config.js';
-import { configSchema, type Config, type ConfigRef, CONFIG_RESTART_REQUIRED } from '../../config.schema.js';
+import { configSchema, type ConfigRef, CONFIG_RESTART_REQUIRED } from '../../config.schema.js';
 
 export async function configRoutes(
   app: FastifyInstance,
@@ -42,7 +42,7 @@ export async function configRoutes(
     const reloaded = reloadConfig(configPath);
     configRef.current = reloaded;
 
-    const restartRequired = changesRestartRequiredField(configRef.current, patch);
+    const restartRequired = changesRestartRequiredField(patch);
 
     return { ...reloaded, restart_required: restartRequired };
   });
@@ -60,7 +60,6 @@ export async function configRoutes(
  * Handles both flat dot-paths and nested objects.
  */
 function changesRestartRequiredField(
-  _config: Config,
   patch: Record<string, unknown>,
 ): boolean {
   for (const topKey of Object.keys(patch)) {

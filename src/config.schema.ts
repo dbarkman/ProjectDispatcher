@@ -109,4 +109,5 @@ export interface ConfigRef {
 export const CONFIG_RESTART_REQUIRED: ReadonlySet<string> = new Set([
   'ui.port',
   'claude_cli.binary_path',
+  'discovery.root_path',
 ]);

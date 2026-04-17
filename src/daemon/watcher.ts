@@ -11,9 +11,10 @@ import { discoverProjects } from './discovery.js';
  * Watches for new/deleted immediate subdirectories and runs discovery
  * to reconcile the DB. Debounced at 1 second to batch rapid changes.
  *
- * The chokidar watcher path is captured at start-time and won't change
- * until restart. Discovery calls inside the callback read
- * configRef.current so ignore-list changes take effect immediately.
+ * The chokidar watcher path and ignore filter are captured at start-time
+ * and won't change until restart. Discovery calls inside the callback
+ * read configRef.current for ignore filtering, but chokidar's own
+ * ignored filter is stale — it only reflects the config at start-time.
  */
 export function startWatcher(db: Database, configRef: ConfigRef, logger: Logger): FSWatcher {
   const rootPath = configRef.current.discovery.root_path;
