@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import type { Database } from 'better-sqlite3';
 import pino from 'pino';
 import { openDatabase } from '../../src/db/index.js';
@@ -205,5 +205,50 @@ describe('reapDetachedRuns', () => {
       ended_at: number;
     };
     expect(run2.ended_at).toBe(firstEndedAt);
+  });
+
+  it('finalizes timed-out detached agent as timeout, not crashed', async () => {
+    const now = Date.now();
+    vi.useFakeTimers({ now });
+
+    const project = createProject(db, {
+      name: 'Timeout',
+      path: '/tmp/timeout-test',
+      projectTypeId: 'software-dev',
+    });
+    const ticket = createTicket(db, { projectId: project.id, title: 'Timeout test' });
+    moveTicket(db, ticket.id, { toColumn: 'coding-agent' });
+
+    const runId = randomUUID();
+    // PID 1 (launchd/init) — always alive via EPERM, SIGTERM/SIGKILL throw EPERM (caught)
+    db.prepare(
+      `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, exit_status, pid)
+       VALUES (?, ?, 'coding-agent', 'claude-opus-4-6', ?, 'running', ?)`,
+    ).run(runId, ticket.id, now - 2 * 60 * 60 * 1000, 1);
+
+    db.prepare(
+      'UPDATE tickets SET claimed_by_run_id = ?, claimed_at = ? WHERE id = ?',
+    ).run(runId, now, ticket.id);
+
+    initActiveRuns(db);
+    reapDetachedRuns(db, silentLogger);
+
+    // Before grace period — still running (finalizeRun deferred to setTimeout)
+    const runBefore = db.prepare('SELECT exit_status FROM agent_runs WHERE id = ?').get(runId) as {
+      exit_status: string;
+    };
+    expect(runBefore.exit_status).toBe('running');
+
+    // Advance past 10s SIGKILL grace period
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const runAfter = db.prepare('SELECT exit_status, error_message FROM agent_runs WHERE id = ?').get(runId) as {
+      exit_status: string;
+      error_message: string;
+    };
+    expect(runAfter.exit_status).toBe('timeout');
+    expect(runAfter.error_message).toContain('Timed out');
+
+    vi.useRealTimers();
   });
 });

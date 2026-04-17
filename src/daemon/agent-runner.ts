@@ -210,6 +210,8 @@ export function reapDetachedRuns(db: Database, logger: Logger): void {
               // Already dead
             }
           }
+          finalizeRun(db, run.id, run.ticket_id, run.agent_type_id, run.project_id, 'timeout',
+            `Timed out after ${run.timeout_minutes} minutes (detached)`, logger);
         }, 10_000);
       }
     }
@@ -279,14 +281,9 @@ export async function runAgent(
 
   // Refuse to spawn if AI provider not configured
   if (!config.ai.auth_method) {
-    finalizeRun(db, runId, ticketId, agentTypeId, projectId, 'crashed', 'AI provider not configured', childLogger);
-
-    addComment(db, ticketId, {
-      type: 'block',
-      author: `agent:${agentTypeId}:${runId}`,
-      body: 'AI provider not configured. Visit the setup wizard to configure authentication before agents can run.',
-      meta: { run_id: runId, exit_status: 'crashed' },
-    });
+    finalizeRun(db, runId, ticketId, agentTypeId, projectId, 'crashed',
+      'AI provider not configured. Visit the setup wizard to configure authentication before agents can run.',
+      childLogger);
 
     childLogger.error('AI provider not configured — refusing to spawn agent');
     return { runId, pid: null, spawned: false };
