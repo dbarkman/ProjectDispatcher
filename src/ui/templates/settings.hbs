@@ -2,6 +2,49 @@
       hx-on::after-request="if(event.detail.successful) { alert('Settings saved!'); location.reload(); }">
 
   <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <!-- AI Provider -->
+    <div class="card lg:col-span-2">
+      <h3 class="text-sm font-semibold text-gray-400 mb-4">AI Provider</h3>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Authentication Method</label>
+          <select name="ai.auth_method" id="settings-auth-method"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+            <option value="" {{#unless config.ai.auth_method}}selected{{/unless}}>Not configured</option>
+            <option value="oauth" {{#if (eq config.ai.auth_method "oauth")}}selected{{/if}}>OAuth (Claude Code login)</option>
+            <option value="api_key" {{#if (eq config.ai.auth_method "api_key")}}selected{{/if}}>API Key</option>
+            <option value="custom" {{#if (eq config.ai.auth_method "custom")}}selected{{/if}}>Custom Endpoint</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Default Model</label>
+          <select name="ai.default_model"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+            <option value="claude-opus-4-6" {{#if (eq config.ai.default_model "claude-opus-4-6")}}selected{{/if}}>Claude Opus 4.6</option>
+            <option value="claude-sonnet-4-6" {{#if (eq config.ai.default_model "claude-sonnet-4-6")}}selected{{/if}}>Claude Sonnet 4.6</option>
+            <option value="claude-haiku-4-5-20251001" {{#if (eq config.ai.default_model "claude-haiku-4-5-20251001")}}selected{{/if}}>Claude Haiku 4.5</option>
+          </select>
+        </div>
+        <div id="settings-apikey-field" class="{{#unless (eq config.ai.auth_method "api_key")}}{{#unless (eq config.ai.auth_method "custom")}}hidden{{/unless}}{{/unless}}">
+          <label class="block text-xs text-gray-500 mb-1">API Key</label>
+          <input name="ai.api_key" type="password" value="{{config.ai.api_key}}" placeholder="sk-ant-..."
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 font-mono focus:border-accent focus:outline-none">
+        </div>
+        <div id="settings-baseurl-field" class="{{#unless (eq config.ai.auth_method "custom")}}hidden{{/unless}}">
+          <label class="block text-xs text-gray-500 mb-1">Base URL</label>
+          <input name="ai.base_url" type="url" value="{{config.ai.base_url}}" placeholder="https://your-endpoint.example.com/v1"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 font-mono focus:border-accent focus:outline-none">
+        </div>
+      </div>
+      <div class="mt-4">
+        <button type="button" id="settings-test-conn"
+          class="px-4 py-1.5 bg-navy-700 hover:bg-navy-600 text-white text-xs rounded transition-colors">
+          Test Connection
+        </button>
+        <span id="settings-test-result" class="ml-3 text-xs"></span>
+      </div>
+    </div>
+
     <!-- Heartbeat -->
     <div class="card">
       <h3 class="text-sm font-semibold text-gray-400 mb-4">Heartbeat</h3>
@@ -86,3 +129,56 @@
     </button>
   </div>
 </form>
+
+<script>
+(function() {
+  var authSelect = document.getElementById('settings-auth-method');
+  var apikeyField = document.getElementById('settings-apikey-field');
+  var baseurlField = document.getElementById('settings-baseurl-field');
+
+  function updateAiFields() {
+    var v = authSelect.value;
+    apikeyField.classList.toggle('hidden', v !== 'api_key' && v !== 'custom');
+    baseurlField.classList.toggle('hidden', v !== 'custom');
+  }
+  if (authSelect) {
+    authSelect.addEventListener('change', updateAiFields);
+  }
+
+  var testBtn = document.getElementById('settings-test-conn');
+  var testResult = document.getElementById('settings-test-result');
+  if (testBtn) {
+    testBtn.addEventListener('click', function() {
+      var method = authSelect.value;
+      if (!method) { testResult.textContent = 'Select an auth method first'; testResult.className = 'ml-3 text-xs text-yellow-400'; return; }
+      var data = { auth_method: method };
+      var apikeyInput = document.querySelector('input[name="ai.api_key"]');
+      var baseurlInput = document.querySelector('input[name="ai.base_url"]');
+      if (apikeyInput && apikeyInput.value) data.api_key = apikeyInput.value;
+      if (baseurlInput && baseurlInput.value) data.base_url = baseurlInput.value;
+
+      testResult.textContent = 'Testing...';
+      testResult.className = 'ml-3 text-xs text-gray-400';
+
+      fetch('/api/config/ai/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      }).then(function(res) { return res.json().then(function(j) { return { ok: res.ok, body: j }; }); })
+        .then(function(result) {
+          if (result.ok) {
+            testResult.textContent = '\u2713 Connected';
+            testResult.className = 'ml-3 text-xs text-green-400';
+          } else {
+            testResult.textContent = '\u2717 ' + (result.body.detail || result.body.error || 'Failed');
+            testResult.className = 'ml-3 text-xs text-red-400';
+          }
+        })
+        .catch(function() {
+          testResult.textContent = '\u2717 Network error';
+          testResult.className = 'ml-3 text-xs text-red-400';
+        });
+    });
+  }
+})();
+</script>

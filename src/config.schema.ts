@@ -18,6 +18,7 @@ export const CONFIG_SECTION_NAMES = [
   'retention',
   'discovery',
   'claude_cli',
+  'ai',
 ] as const;
 
 export type ConfigSectionName = (typeof CONFIG_SECTION_NAMES)[number];
@@ -77,6 +78,15 @@ export const configSchema = z.object({
   claude_cli: z
     .object({
       binary_path: z.string().default('claude'),
+      default_model: z.enum(CLAUDE_MODELS).default('claude-sonnet-4-6'),
+    })
+    .prefault({}),
+  ai: z
+    .object({
+      provider: z.enum(['claude']).default('claude'),
+      auth_method: z.enum(['oauth', 'api_key', 'custom']).optional(),
+      api_key: z.string().optional(),
+      base_url: z.string().url().optional(),
       default_model: z.enum(CLAUDE_MODELS).default('claude-sonnet-4-6'),
     })
     .prefault({}),

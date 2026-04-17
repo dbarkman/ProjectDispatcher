@@ -113,6 +113,13 @@ async function main(): Promise<void> {
   await app.listen({ host: BIND_HOST, port });
   logger.info({ host: BIND_HOST, port }, 'Daemon listening');
 
+  if (!config.ai.auth_method) {
+    logger.warn(
+      { setupUrl: `http://${BIND_HOST}:${port}/ui/setup` },
+      'AI provider not configured — visit the setup wizard to configure authentication',
+    );
+  }
+
   // 9. Start filesystem watcher for live project discovery
   const watcher = startWatcher(db, config, logger);
   logger.info('Filesystem watcher started');

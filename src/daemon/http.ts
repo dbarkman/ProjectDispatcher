@@ -12,6 +12,7 @@ import { agentTypeRoutes } from './routes/agent-types.js';
 import { ticketRoutes } from './routes/tickets.js';
 import { attachmentRoutes } from './routes/attachments.js';
 import { configRoutes } from './routes/config.js';
+import { aiConfigRoutes } from './routes/ai-config.js';
 import { agentRunRoutes } from './routes/agent-runs.js';
 import { discoveryRoutes } from './routes/discovery.js';
 import { setupUi } from '../ui/routes/setup.js';
@@ -94,6 +95,17 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
     reply.header('Content-Security-Policy', csp);
   });
 
+  // Setup wizard redirect: if AI provider not configured, redirect UI
+  // routes to /ui/setup. API, static, and the setup page itself are exempt.
+  app.addHook('onRequest', async (request, reply) => {
+    if (config.ai.auth_method) return;
+    const url = request.url;
+    if (url.startsWith('/ui/setup') || url.startsWith('/api/') || url.startsWith('/static/')) return;
+    if (url === '/' || url.startsWith('/ui/')) {
+      return reply.redirect('/ui/setup');
+    }
+  });
+
   // Multipart support for file uploads (attachments).
   await app.register(multipart, {
     limits: {
@@ -155,6 +167,7 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
   await attachmentRoutes(app, db);
   await agentRunRoutes(app, db);
   await configRoutes(app, () => config, (c: Config) => { config = c; });
+  await aiConfigRoutes(app, () => config, (c: Config) => { config = c; });
   await discoveryRoutes(app, db, config);
 
   // Web UI (htmx + Handlebars) — serves HTML pages

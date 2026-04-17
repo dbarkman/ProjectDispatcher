@@ -12,7 +12,7 @@ import { createLogger } from '../../src/logger.js';
 import { createHttpServer } from '../../src/daemon/http.js';
 import { Scheduler } from '../../src/daemon/scheduler.js';
 import type { Database } from 'better-sqlite3';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -26,7 +26,9 @@ beforeEach(async () => {
   seedBuiltins(db);
 
   tmpDir = mkdtempSync(join(tmpdir(), 'pd-api-test-'));
-  const config = loadConfig(join(tmpDir, 'nonexistent.json'));
+  const cfgPath = join(tmpDir, 'config.json');
+  writeFileSync(cfgPath, JSON.stringify({ ai: { auth_method: 'oauth' } }));
+  const config = loadConfig(cfgPath);
   const logger = createLogger(join(tmpDir, 'logs'));
 
   app = await createHttpServer({ config, db, logger });
@@ -1018,7 +1020,9 @@ describe('Scheduler integration via project creation', () => {
     seedBuiltins(schedDb);
 
     schedTmpDir = mkdtempSync(join(tmpdir(), 'pd-sched-api-'));
-    const config = loadConfig(join(schedTmpDir, 'nonexistent.json'));
+    const schedCfgPath = join(schedTmpDir, 'config.json');
+    writeFileSync(schedCfgPath, JSON.stringify({ ai: { auth_method: 'oauth' } }));
+    const config = loadConfig(schedCfgPath);
     const logger = createLogger(join(schedTmpDir, 'logs'));
 
     scheduler = new Scheduler(schedDb, config, logger);

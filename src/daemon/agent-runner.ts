@@ -157,37 +157,60 @@ export async function runAgent(
 
     childLogger.info({ cwd: project.path }, 'Spawning claude subprocess');
 
-    // Subprocess environment: inherit the full parent env.
-    //
-    // The claude CLI authenticates via OAuth tokens stored in ~/.claude/
-    // (not just ANTHROPIC_API_KEY). Scrubbing the env breaks OAuth auth,
-    // which is how most Claude Code users authenticate. Since this is a
-    // single-user localhost tool where the subprocess runs as the same
-    // user with the same trust level, inheriting the env is the correct
-    // default. A future config option can offer a scrubbed whitelist mode
-    // for users who want it.
-
     // Build the author string for ticket CLI comments
     const authorString = `agent:${agentTypeId}:${runId}`;
 
-    // Spawn the subprocess. Env vars give the ticket CLI script everything
-    // it needs to read/comment/move tickets via direct DB access.
+    // Refuse to spawn if AI provider not configured
+    if (!config.ai.auth_method) {
+      const durationMs = Date.now() - startedAt;
+      db.prepare(
+        `UPDATE agent_runs SET exit_status = 'crashed', ended_at = ?, error_message = ? WHERE id = ?`,
+      ).run(Date.now(), 'AI provider not configured', runId);
+
+      db.transaction(() => {
+        db.prepare(
+          'UPDATE tickets SET claimed_by_run_id = NULL, claimed_at = NULL, updated_at = ? WHERE id = ? AND claimed_by_run_id = ?',
+        ).run(Date.now(), ticketId, runId);
+        addComment(db, ticketId, {
+          type: 'block',
+          author: authorString,
+          body: 'AI provider not configured. Visit the setup wizard to configure authentication before agents can run.',
+          meta: { run_id: runId, exit_status: 'crashed' },
+        });
+      })();
+
+      childLogger.error('AI provider not configured — refusing to spawn agent');
+      return { runId, exitStatus: 'crashed', exitCode: null, errorMessage: 'AI provider not configured', durationMs };
+    }
+
+    // Subprocess env: inherit parent + overlay auth based on config.ai.auth_method
+    const subprocessEnv: Record<string, string | undefined> = {
+      ...process.env,
+      NODE_ENV: 'production',
+      DISPATCH_DB_PATH: DEFAULT_DB_PATH,
+      DISPATCH_TICKET_ID: ticketId,
+      DISPATCH_PROJECT_ID: projectId,
+      DISPATCH_AGENT_TYPE: agentTypeId,
+      DISPATCH_RUN_ID: runId,
+      DISPATCH_AUTHOR: authorString,
+      DISPATCH_PORT: String(config.ui.port),
+      DISPATCH_TICKET_BIN: TICKET_CLI_PATH,
+    };
+
+    if (config.ai.auth_method === 'api_key' && config.ai.api_key) {
+      subprocessEnv.ANTHROPIC_API_KEY = config.ai.api_key;
+    } else if (config.ai.auth_method === 'custom') {
+      if (config.ai.api_key) subprocessEnv.ANTHROPIC_API_KEY = config.ai.api_key;
+      if (config.ai.base_url) subprocessEnv.ANTHROPIC_BASE_URL = config.ai.base_url;
+    }
+    // auth_method === 'oauth': inherit parent env (current behavior)
+
+    // Spawn the subprocess
     const result = await new Promise<AgentRunResult>((resolvePromise) => {
       const child: ChildProcess = spawn(config.claude_cli.binary_path, claudeArgs, {
         cwd: project.path,
         stdio: ['ignore', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          NODE_ENV: 'production',
-          DISPATCH_DB_PATH: DEFAULT_DB_PATH,
-          DISPATCH_TICKET_ID: ticketId,
-          DISPATCH_PROJECT_ID: projectId,
-          DISPATCH_AGENT_TYPE: agentTypeId,
-          DISPATCH_RUN_ID: runId,
-          DISPATCH_AUTHOR: authorString,
-          DISPATCH_PORT: String(config.ui.port),
-          DISPATCH_TICKET_BIN: TICKET_CLI_PATH,
-        },
+        env: subprocessEnv,
       });
 
       child.stdout?.pipe(transcriptStream);

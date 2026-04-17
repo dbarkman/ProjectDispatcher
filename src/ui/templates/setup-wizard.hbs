@@ -1,0 +1,289 @@
+<div class="max-w-2xl mx-auto">
+  <div class="text-center mb-8">
+    <h1 class="text-2xl font-bold text-white">Welcome to Project Dispatcher</h1>
+    <p class="text-gray-400 mt-2">Let's configure your AI provider to get started.</p>
+  </div>
+
+  <!-- Step indicators -->
+  <div class="flex items-center justify-center gap-2 mb-8" id="step-indicators">
+    <div class="step-dot active" data-step="1">
+      <span class="w-8 h-8 rounded-full bg-accent text-white flex items-center justify-center text-sm font-semibold">1</span>
+      <span class="text-xs text-gray-400 mt-1">Auth</span>
+    </div>
+    <div class="w-12 h-px bg-navy-700"></div>
+    <div class="step-dot" data-step="2">
+      <span class="w-8 h-8 rounded-full bg-navy-700 text-gray-400 flex items-center justify-center text-sm font-semibold">2</span>
+      <span class="text-xs text-gray-400 mt-1">Test</span>
+    </div>
+    <div class="w-12 h-px bg-navy-700"></div>
+    <div class="step-dot" data-step="3">
+      <span class="w-8 h-8 rounded-full bg-navy-700 text-gray-400 flex items-center justify-center text-sm font-semibold">3</span>
+      <span class="text-xs text-gray-400 mt-1">Model</span>
+    </div>
+  </div>
+
+  <!-- Step 1: Authentication Method -->
+  <div id="step-1" class="card">
+    <h3 class="text-sm font-semibold text-gray-400 mb-4">Step 1: Authentication Method</h3>
+    <p class="text-xs text-gray-500 mb-4">Claude is the AI provider. Choose how to authenticate.</p>
+
+    <div class="space-y-3">
+      <!-- OAuth option -->
+      <label class="block p-4 rounded-lg border cursor-pointer transition-colors border-navy-700 hover:border-accent"
+             id="oauth-option">
+        <div class="flex items-center gap-3">
+          <input type="radio" name="auth_method" value="oauth" class="accent-accent"
+                 {{#if oauthDetected}}checked{{/if}}>
+          <div class="flex-1">
+            <div class="flex items-center gap-2">
+              <span class="text-sm font-medium text-white">OAuth (Claude Code login)</span>
+              {{#if oauthDetected}}
+              <span class="text-xs px-2 py-0.5 rounded-full bg-green-900/50 text-green-400">&#10003; Detected</span>
+              {{else}}
+              <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-400">Not detected</span>
+              {{/if}}
+            </div>
+            <p class="text-xs text-gray-500 mt-1">
+              {{#if oauthDetected}}
+              PD will use your existing Claude Code session.
+              {{else}}
+              Run <code class="text-gray-300">claude login</code> first, then select this option.
+              {{/if}}
+            </p>
+          </div>
+        </div>
+      </label>
+
+      <!-- API Key option -->
+      <label class="block p-4 rounded-lg border cursor-pointer transition-colors border-navy-700 hover:border-accent"
+             id="apikey-option">
+        <div class="flex items-center gap-3">
+          <input type="radio" name="auth_method" value="api_key" class="accent-accent"
+                 {{#unless oauthDetected}}checked{{/unless}}>
+          <div class="flex-1">
+            <span class="text-sm font-medium text-white">API Key</span>
+            <p class="text-xs text-gray-500 mt-1">Charges against your Anthropic API account.</p>
+          </div>
+        </div>
+        <div class="mt-3 ml-7 hidden" id="apikey-fields">
+          <input type="text" id="api-key-input" placeholder="sk-ant-..."
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 font-mono focus:border-accent focus:outline-none">
+        </div>
+      </label>
+
+      <!-- Custom endpoint option -->
+      <label class="block p-4 rounded-lg border cursor-pointer transition-colors border-navy-700 hover:border-accent"
+             id="custom-option">
+        <div class="flex items-center gap-3">
+          <input type="radio" name="auth_method" value="custom" class="accent-accent">
+          <div class="flex-1">
+            <span class="text-sm font-medium text-white">Custom Endpoint</span>
+            <p class="text-xs text-gray-500 mt-1">For Bedrock, proxies, or other compatible endpoints.</p>
+          </div>
+        </div>
+        <div class="mt-3 ml-7 hidden space-y-2" id="custom-fields">
+          <input type="url" id="base-url-input" placeholder="https://your-endpoint.example.com/v1"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 font-mono focus:border-accent focus:outline-none">
+          <input type="text" id="custom-key-input" placeholder="API key"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 font-mono focus:border-accent focus:outline-none">
+        </div>
+      </label>
+    </div>
+
+    <div class="mt-6 flex justify-end">
+      <button id="step1-next" class="px-6 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">
+        Next &rarr;
+      </button>
+    </div>
+  </div>
+
+  <!-- Step 2: Connection Test -->
+  <div id="step-2" class="card hidden">
+    <h3 class="text-sm font-semibold text-gray-400 mb-4">Step 2: Connection Test</h3>
+    <p class="text-xs text-gray-500 mb-4">Testing connection to Claude...</p>
+
+    <div id="test-status" class="p-4 rounded-lg border border-navy-700 text-center">
+      <div id="test-loading" class="text-gray-400">
+        <span class="animate-pulse">Testing connection...</span>
+      </div>
+      <div id="test-success" class="hidden text-green-400">
+        <span class="text-2xl">&#10003;</span>
+        <p class="mt-2 font-medium">Connected to Claude — ready to go</p>
+      </div>
+      <div id="test-failure" class="hidden text-red-400">
+        <span class="text-2xl">&#10007;</span>
+        <p class="mt-2 font-medium" id="test-error-msg">Authentication failed</p>
+        <p class="text-xs text-gray-500 mt-1" id="test-error-detail"></p>
+      </div>
+    </div>
+
+    <div class="mt-6 flex justify-between">
+      <button id="step2-back" class="px-6 py-2 bg-navy-700 hover:bg-navy-600 text-white text-sm rounded-lg transition-colors">
+        &larr; Back
+      </button>
+      <button id="step2-next" class="px-6 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors hidden">
+        Next &rarr;
+      </button>
+      <button id="step2-retry" class="px-6 py-2 bg-navy-700 hover:bg-navy-600 text-white text-sm rounded-lg transition-colors hidden">
+        Retry
+      </button>
+    </div>
+  </div>
+
+  <!-- Step 3: Default Model -->
+  <div id="step-3" class="card hidden">
+    <h3 class="text-sm font-semibold text-gray-400 mb-4">Step 3: Default Model</h3>
+    <p class="text-xs text-gray-500 mb-4">Choose the default model for agents. Individual agents can override this in their workflow settings.</p>
+
+    <select id="model-select"
+      class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+      <option value="claude-opus-4-6">Claude Opus 4.6</option>
+      <option value="claude-sonnet-4-6" selected>Claude Sonnet 4.6</option>
+      <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5</option>
+    </select>
+
+    <div class="mt-6 flex justify-between">
+      <button id="step3-back" class="px-6 py-2 bg-navy-700 hover:bg-navy-600 text-white text-sm rounded-lg transition-colors">
+        &larr; Back
+      </button>
+      <button id="step3-save" class="px-6 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">
+        Save &amp; Continue
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const radios = document.querySelectorAll('input[name="auth_method"]');
+  const apikeyFields = document.getElementById('apikey-fields');
+  const customFields = document.getElementById('custom-fields');
+
+  function updateFieldVisibility() {
+    const selected = document.querySelector('input[name="auth_method"]:checked');
+    if (!selected) return;
+    apikeyFields.classList.toggle('hidden', selected.value !== 'api_key');
+    customFields.classList.toggle('hidden', selected.value !== 'custom');
+  }
+
+  radios.forEach(function(r) { r.addEventListener('change', updateFieldVisibility); });
+  updateFieldVisibility();
+
+  function getFormData() {
+    const method = document.querySelector('input[name="auth_method"]:checked').value;
+    var data = { auth_method: method };
+    if (method === 'api_key') {
+      data.api_key = document.getElementById('api-key-input').value;
+    } else if (method === 'custom') {
+      data.base_url = document.getElementById('base-url-input').value;
+      data.api_key = document.getElementById('custom-key-input').value;
+    }
+    return data;
+  }
+
+  function showStep(n) {
+    document.getElementById('step-1').classList.toggle('hidden', n !== 1);
+    document.getElementById('step-2').classList.toggle('hidden', n !== 2);
+    document.getElementById('step-3').classList.toggle('hidden', n !== 3);
+    document.querySelectorAll('.step-dot').forEach(function(dot) {
+      var s = parseInt(dot.dataset.step);
+      var circle = dot.querySelector('span:first-child');
+      if (s <= n) {
+        circle.classList.remove('bg-navy-700', 'text-gray-400');
+        circle.classList.add('bg-accent', 'text-white');
+      } else {
+        circle.classList.remove('bg-accent', 'text-white');
+        circle.classList.add('bg-navy-700', 'text-gray-400');
+      }
+    });
+  }
+
+  function runTest() {
+    document.getElementById('test-loading').classList.remove('hidden');
+    document.getElementById('test-success').classList.add('hidden');
+    document.getElementById('test-failure').classList.add('hidden');
+    document.getElementById('step2-next').classList.add('hidden');
+    document.getElementById('step2-retry').classList.add('hidden');
+
+    var data = getFormData();
+    fetch('/api/config/ai/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(function(res) { return res.json().then(function(j) { return { ok: res.ok, body: j }; }); })
+      .then(function(result) {
+        document.getElementById('test-loading').classList.add('hidden');
+        if (result.ok) {
+          document.getElementById('test-success').classList.remove('hidden');
+          document.getElementById('step2-next').classList.remove('hidden');
+        } else {
+          document.getElementById('test-failure').classList.remove('hidden');
+          document.getElementById('test-error-msg').textContent = result.body.error || 'Connection failed';
+          document.getElementById('test-error-detail').textContent = result.body.detail || '';
+          document.getElementById('step2-retry').classList.remove('hidden');
+        }
+      })
+      .catch(function() {
+        document.getElementById('test-loading').classList.add('hidden');
+        document.getElementById('test-failure').classList.remove('hidden');
+        document.getElementById('test-error-msg').textContent = 'Network error';
+        document.getElementById('step2-retry').classList.remove('hidden');
+      });
+  }
+
+  // Step navigation
+  document.getElementById('step1-next').addEventListener('click', function() {
+    var method = document.querySelector('input[name="auth_method"]:checked');
+    if (!method) return;
+    if (method.value === 'api_key' && !document.getElementById('api-key-input').value.trim()) {
+      document.getElementById('api-key-input').focus();
+      return;
+    }
+    if (method.value === 'custom') {
+      if (!document.getElementById('base-url-input').value.trim()) {
+        document.getElementById('base-url-input').focus();
+        return;
+      }
+      if (!document.getElementById('custom-key-input').value.trim()) {
+        document.getElementById('custom-key-input').focus();
+        return;
+      }
+    }
+    showStep(2);
+    runTest();
+  });
+
+  document.getElementById('step2-back').addEventListener('click', function() { showStep(1); });
+  document.getElementById('step2-next').addEventListener('click', function() { showStep(3); });
+  document.getElementById('step2-retry').addEventListener('click', runTest);
+  document.getElementById('step3-back').addEventListener('click', function() { showStep(2); });
+
+  document.getElementById('step3-save').addEventListener('click', function() {
+    var data = getFormData();
+    data.default_model = document.getElementById('model-select').value;
+
+    document.getElementById('step3-save').disabled = true;
+    document.getElementById('step3-save').textContent = 'Saving...';
+
+    fetch('/api/config/ai', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    }).then(function(res) { return res.json().then(function(j) { return { ok: res.ok, body: j }; }); })
+      .then(function(result) {
+        if (result.ok) {
+          window.location.href = '/';
+        } else {
+          alert('Failed to save: ' + (result.body.error || 'Unknown error'));
+          document.getElementById('step3-save').disabled = false;
+          document.getElementById('step3-save').textContent = 'Save & Continue';
+        }
+      })
+      .catch(function() {
+        alert('Network error');
+        document.getElementById('step3-save').disabled = false;
+        document.getElementById('step3-save').textContent = 'Save & Continue';
+      });
+  });
+})();
+</script>

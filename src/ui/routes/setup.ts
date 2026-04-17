@@ -20,6 +20,7 @@ import { ticketUiRoutes } from './tickets.js';
 import { agentTypeUiRoutes } from './agent-types.js';
 import { projectTypeUiRoutes } from './project-types.js';
 import { settingsUiRoutes } from './settings.js';
+import { setupWizardRoutes } from './setup-wizard.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -87,4 +88,5 @@ export async function setupUi(app: FastifyInstance, db: Database, config: Config
   await agentTypeUiRoutes(app, db);
   await projectTypeUiRoutes(app, db);
   await settingsUiRoutes(app, config);
+  await setupWizardRoutes(app);
 }
