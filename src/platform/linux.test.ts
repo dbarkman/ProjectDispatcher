@@ -15,9 +15,18 @@ describe('buildUnit', () => {
     expect(unit).toContain('Description=Project Dispatcher Daemon');
   });
 
-  it('sets ExecStart to node + daemon entry', () => {
+  it('sets ExecStart to quoted node + daemon entry', () => {
     const unit = buildUnit(config);
-    expect(unit).toContain(`ExecStart=${config.nodePath} ${config.daemonEntryPath}`);
+    expect(unit).toContain(`ExecStart="${config.nodePath}" "${config.daemonEntryPath}"`);
+  });
+
+  it('handles paths with spaces in ExecStart', () => {
+    const spaced = buildUnit({
+      ...config,
+      nodePath: '/opt/My Programs/node',
+      daemonEntryPath: '/opt/Project Dispatcher/index.js',
+    });
+    expect(spaced).toContain('ExecStart="/opt/My Programs/node" "/opt/Project Dispatcher/index.js"');
   });
 
   it('configures Restart=on-failure with 5s delay', () => {

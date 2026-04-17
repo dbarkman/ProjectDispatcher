@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildPlist } from './macos.js';
+import { buildPlist, xmlEscape } from './macos.js';
 import type { ServiceConfig } from './macos.js';
 
 const config: ServiceConfig = {
@@ -48,5 +48,32 @@ describe('buildPlist', () => {
     expect(plist).toContain('<key>HOME</key>');
     expect(plist).toContain('<key>NODE_ENV</key>');
     expect(plist).toContain('<string>production</string>');
+  });
+
+  it('escapes XML special chars in paths', () => {
+    const plist = buildPlist({
+      ...config,
+      workingDir: '/opt/A&B<C>D',
+    });
+    expect(plist).toContain('<string>/opt/A&amp;B&lt;C&gt;D</string>');
+    expect(plist).not.toContain('<string>/opt/A&B<C>D</string>');
+  });
+});
+
+describe('xmlEscape', () => {
+  it('escapes ampersands', () => {
+    expect(xmlEscape('a&b')).toBe('a&amp;b');
+  });
+
+  it('escapes angle brackets', () => {
+    expect(xmlEscape('<foo>')).toBe('&lt;foo&gt;');
+  });
+
+  it('escapes double quotes', () => {
+    expect(xmlEscape('"test"')).toBe('&quot;test&quot;');
+  });
+
+  it('leaves clean strings unchanged', () => {
+    expect(xmlEscape('/usr/local/bin/node')).toBe('/usr/local/bin/node');
   });
 });

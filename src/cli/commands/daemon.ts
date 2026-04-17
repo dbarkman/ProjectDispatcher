@@ -96,8 +96,8 @@ export function registerDaemonCommands(program: Command): void {
       try {
         const os = platform();
         if (os === 'darwin') {
-          await execFileAsync('launchctl', ['stop', 'com.projectdispatcher.daemon']);
-          await execFileAsync('launchctl', ['start', 'com.projectdispatcher.daemon']);
+          const uid = process.getuid?.()?.toString() ?? '501';
+          await execFileAsync('launchctl', ['kickstart', '-k', `gui/${uid}/com.projectdispatcher.daemon`]);
         } else if (os === 'linux') {
           await execFileAsync('systemctl', ['--user', 'restart', 'projectdispatcher']);
         } else {

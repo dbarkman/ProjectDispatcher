@@ -25,7 +25,7 @@ Description=Project Dispatcher Daemon
 After=network.target
 
 [Service]
-ExecStart=${config.nodePath} ${config.daemonEntryPath}
+ExecStart="${config.nodePath}" "${config.daemonEntryPath}"
 Restart=on-failure
 RestartSec=5
 WorkingDirectory=${config.workingDir}
