@@ -1,6 +1,6 @@
 <!-- Ticket header — display mode -->
 <div id="ticket-display" class="mb-6">
-  <div class="flex items-center gap-3 text-sm text-gray-400 mb-1">
+  <div class="flex flex-wrap items-center gap-3 text-sm text-gray-400 mb-1">
     <span class="priority-dot priority-{{ticket.priority}}"></span>
     <span>{{ticket.priority}}</span>
     <span class="text-gray-600">|</span>
@@ -102,7 +102,7 @@
 </script>
 
 <!-- Quick action buttons (Gap fix #8) -->
-<div class="flex gap-2 mb-6">
+<div class="flex flex-wrap gap-2 mb-6">
   {{#if prevColumn}}
   <form hx-post="/api/tickets/{{ticket.id}}/move" hx-ext="json-enc" hx-swap="none"
         hx-on::after-request="if(event.detail.successful) location.reload()">
