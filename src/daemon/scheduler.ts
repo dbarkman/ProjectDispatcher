@@ -21,7 +21,7 @@
 import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
 import { randomUUID } from 'node:crypto';
-import type { Config } from '../config.schema.js';
+import type { ConfigRef } from '../config.schema.js';
 import { runAgent } from './agent-runner.js';
 import { mergeAndCleanup } from './worktree.js';
 
@@ -50,12 +50,12 @@ export interface HeartbeatState {
 export class Scheduler {
   private timers = new Map<string, ReturnType<typeof setTimeout>>();
   private db: Database;
-  private config: Config;
+  private configRef: ConfigRef;
   private logger: Logger;
 
-  constructor(db: Database, config: Config, logger: Logger) {
+  constructor(db: Database, configRef: ConfigRef, logger: Logger) {
     this.db = db;
-    this.config = config;
+    this.configRef = configRef;
     this.logger = logger.child({ component: 'scheduler' });
   }
 
@@ -211,7 +211,7 @@ export class Scheduler {
         } catch (backoffErr) {
           this.logger.error({ err: backoffErr, projectId }, 'applyBackoff failed — using hard fallback timer');
           // Guarantee a timer exists even when the DB is unavailable.
-          const fallbackMs = this.config.heartbeat.base_interval_seconds * 1000;
+          const fallbackMs = this.configRef.current.heartbeat.base_interval_seconds * 1000;
           const fallbackTimer = setTimeout(() => {
             this.timers.delete(projectId);
             this.handleHeartbeat(projectId).catch(() => { /* next cycle will retry */ });
@@ -302,9 +302,9 @@ export class Scheduler {
            )`,
         ).get(ticket.id, ticket.id) as { c: number }).c;
 
-        if (runsSinceLastMove >= this.config.agents.circuit_breaker_max_runs) {
+        if (runsSinceLastMove >= this.configRef.current.agents.circuit_breaker_max_runs) {
           this.logger.warn(
-            { ticketId: ticket.id, runs: runsSinceLastMove, threshold: this.config.agents.circuit_breaker_max_runs },
+            { ticketId: ticket.id, runs: runsSinceLastMove, threshold: this.configRef.current.agents.circuit_breaker_max_runs },
             'Circuit breaker tripped — ticket stuck, moving to human',
           );
           const now = Date.now();
@@ -320,7 +320,7 @@ export class Scheduler {
               randomUUID(),
               ticket.id,
               `Agent ran ${runsSinceLastMove} times without moving this ticket. Moved to human for review. Check the agent transcripts to understand why progress stalled.`,
-              JSON.stringify({ runs_since_move: runsSinceLastMove, threshold: this.config.agents.circuit_breaker_max_runs }),
+              JSON.stringify({ runs_since_move: runsSinceLastMove, threshold: this.configRef.current.agents.circuit_breaker_max_runs }),
               now,
             );
           })();
@@ -331,7 +331,7 @@ export class Scheduler {
           await runAgent(
             { projectId, agentTypeId: col.agent_type_id, ticketId: ticket.id },
             this.db,
-            this.config,
+            this.configRef.current,
             this.logger,
           );
         } catch (err) {
@@ -351,7 +351,7 @@ export class Scheduler {
     }
 
     // Merge completed worktree branches for tickets that have reached 'done'.
-    if (this.config.agents.parallel_coding) {
+    if (this.configRef.current.agents.parallel_coding) {
       await this.mergeCompletedWorktrees(projectId);
     }
 
@@ -425,7 +425,7 @@ export class Scheduler {
    */
   private resetToBase(projectId: string): void {
     const now = Date.now();
-    const baseMs = this.config.heartbeat.base_interval_seconds * 1000;
+    const baseMs = this.configRef.current.heartbeat.base_interval_seconds * 1000;
     const nextCheck = now + baseMs;
 
     this.db
@@ -451,9 +451,9 @@ export class Scheduler {
       .get(projectId) as { consecutive_empty_checks: number } | undefined;
 
     const emptyChecks = (hb?.consecutive_empty_checks ?? 0) + 1;
-    const baseMs = this.config.heartbeat.base_interval_seconds * 1000;
-    const maxMs = this.config.heartbeat.max_interval_seconds * 1000;
-    const multiplier = this.config.heartbeat.backoff_multiplier;
+    const baseMs = this.configRef.current.heartbeat.base_interval_seconds * 1000;
+    const maxMs = this.configRef.current.heartbeat.max_interval_seconds * 1000;
+    const multiplier = this.configRef.current.heartbeat.backoff_multiplier;
 
     const intervalMs = Math.min(baseMs * Math.pow(multiplier, emptyChecks), maxMs);
     const nextCheck = now + intervalMs;

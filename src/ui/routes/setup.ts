@@ -12,7 +12,7 @@ import fastifyView from '@fastify/view';
 import fastifyStatic from '@fastify/static';
 import Handlebars from 'handlebars';
 import type { Database } from 'better-sqlite3';
-import type { Config } from '../../config.schema.js';
+import type { ConfigRef } from '../../config.schema.js';
 import { displayPath } from '../../display-path.js';
 import { inboxRoutes } from './inbox.js';
 import { projectUiRoutes } from './projects.js';
@@ -38,22 +38,13 @@ Handlebars.registerHelper('relativeTime', (timestamp: number) => {
   return `${days}d ago`;
 });
 
-export async function setupUi(app: FastifyInstance, db: Database, config: Config): Promise<void> {
+export async function setupUi(app: FastifyInstance, db: Database, configRef: ConfigRef): Promise<void> {
   const templatesDir = join(__dirname, '..', 'templates');
 
-  // Register shared partials used inside full views, and pre-compile them
-  // as standalone templates for htmx auto-poll endpoints that render just
-  // the fragment. One-shot startup I/O before listen() — async readFile
-  // doesn't block anything here.
   const commentThreadSrc = await readFile(join(templatesDir, 'comment-thread.hbs'), 'utf8');
   Handlebars.registerPartial('commentThread', commentThreadSrc);
   const commentThreadTemplate = Handlebars.compile(commentThreadSrc);
 
-  // Agent edit form partial. Used by both the library agent-types detail
-  // page and the project-scoped agent edit page; the wrapping template
-  // controls breadcrumbs and saveRedirectUrl. Shared partial = single
-  // source of truth for the form structure when option C (inline drawer)
-  // ships later.
   const agentEditFormSrc = await readFile(join(templatesDir, 'agent-edit-form.hbs'), 'utf8');
   Handlebars.registerPartial('agentEditForm', agentEditFormSrc);
 
@@ -83,10 +74,10 @@ export async function setupUi(app: FastifyInstance, db: Database, config: Config
 
   // Mount UI page routes
   await inboxRoutes(app, db);
-  await projectUiRoutes(app, db, config, { boardColumnsTemplate });
+  await projectUiRoutes(app, db, configRef, { boardColumnsTemplate });
   await ticketUiRoutes(app, db, { commentThreadTemplate });
   await agentTypeUiRoutes(app, db);
   await projectTypeUiRoutes(app, db);
-  await settingsUiRoutes(app, config);
+  await settingsUiRoutes(app, configRef);
   await setupWizardRoutes(app);
 }

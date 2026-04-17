@@ -24,7 +24,7 @@ function buildTestServer(port = 5757): Promise<FastifyInstance> {
 
   const config = configSchema.parse({ ui: { port } });
   const logger = pino({ level: 'silent' });
-  return createHttpServer({ config, db, logger });
+  return createHttpServer({ configRef: { current: config }, db, logger });
 }
 
 describe('Host header allowlist (DNS rebinding protection)', () => {

@@ -10,7 +10,7 @@ import { mkdir, readdir, unlink, stat, access } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
-import type { Config } from '../config.schema.js';
+import type { Config, ConfigRef } from '../config.schema.js';
 import { DEFAULT_TASKS_DIR } from '../db/index.js';
 
 const BACKUPS_DIR = join(DEFAULT_TASKS_DIR, 'backups');
@@ -30,7 +30,7 @@ const TWENTY_THREE_HOURS_MS = 23 * ONE_HOUR_MS;
  */
 export function startBackgroundJobs(
   db: Database,
-  config: Config,
+  configRef: ConfigRef,
   logger: Logger,
 ): ReturnType<typeof setInterval> {
   const jobLogger = logger.child({ component: 'jobs' });
@@ -41,7 +41,7 @@ export function startBackgroundJobs(
     // Nightly backup (Gap fix #12)
     if (now - lastBackupAt > TWENTY_THREE_HOURS_MS) {
       try {
-        await runBackup(db, config, jobLogger);
+        await runBackup(db, configRef.current, jobLogger);
         lastBackupAt = now;
       } catch (err) {
         jobLogger.error({ err }, 'Backup job failed');
@@ -51,7 +51,7 @@ export function startBackgroundJobs(
     // Retention cleanup (Gap fix #13)
     if (now - lastCleanupAt > TWENTY_THREE_HOURS_MS) {
       try {
-        await runRetentionCleanup(config, jobLogger);
+        await runRetentionCleanup(configRef.current, jobLogger);
         lastCleanupAt = now;
       } catch (err) {
         jobLogger.error({ err }, 'Retention cleanup failed');

@@ -2,37 +2,22 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { readFile, writeFile } from 'node:fs/promises';
 import { reloadConfig, DEFAULT_CONFIG_PATH } from '../../config.js';
-import { configSchema, type Config } from '../../config.schema.js';
+import { configSchema, type Config, type ConfigRef, CONFIG_RESTART_REQUIRED } from '../../config.schema.js';
 
-/**
- * Config API routes. Reads and writes the daemon config file.
- *
- * The `getConfig` getter and `setConfig` setter close over the same
- * mutable `config` binding in `http.ts`, so PATCH/reload updates are
- * immediately visible to subsequent GET requests and to other routes
- * that read `config` (like the health check). (Code Review #4 F-04)
- */
 export async function configRoutes(
   app: FastifyInstance,
-  getConfig: () => Config,
-  setConfig: (c: Config) => void,
+  configRef: ConfigRef,
   configPath: string = DEFAULT_CONFIG_PATH,
 ): Promise<void> {
   // GET /api/config — returns the current effective config
   app.get('/api/config', async () => {
-    return getConfig();
+    return configRef.current;
   });
 
   // PATCH /api/config — update the config file, validate, reload
   app.patch('/api/config', async (request, reply) => {
-    // Zod-parse the body BEFORE deepMerge to prevent prototype pollution
-    // and to reject non-object inputs (null, string, array) with a 400
-    // instead of a 500 TypeError. (Code Review #4 F-02, Security Review #4 MEDIUM)
     const patch = z.record(z.string(), z.unknown()).parse(request.body);
 
-    // Read current file config as the merge base. Uses async readFile
-    // instead of the sync loadConfig — this is a request handler, not
-    // startup, so sync I/O is not acceptable. (Security Review #5 M-01)
     let current: Record<string, unknown>;
     try {
       const text = await readFile(configPath, 'utf8');
@@ -43,7 +28,6 @@ export async function configRoutes(
 
     const merged = deepMerge(current, patch);
 
-    // Validate the merged config — if invalid, reject without writing
     const result = configSchema.safeParse(merged);
     if (!result.success) {
       const issues = result.error.issues.map((i) => ({
@@ -53,30 +37,50 @@ export async function configRoutes(
       return reply.status(400).send({ error: 'Invalid config', issues });
     }
 
-    // Write the merged config to disk
     await writeFile(configPath, JSON.stringify(merged, null, 2) + '\n', 'utf8');
 
-    // Reload and update the daemon's effective config
     const reloaded = reloadConfig(configPath);
-    setConfig(reloaded);
-    return reloaded;
+    configRef.current = reloaded;
+
+    const restartRequired = changesRestartRequiredField(configRef.current, patch);
+
+    return { ...reloaded, restart_required: restartRequired };
   });
 
   // POST /api/config/reload — force a reload from disk
   app.post('/api/config/reload', async () => {
     const reloaded = reloadConfig(configPath);
-    setConfig(reloaded);
+    configRef.current = reloaded;
     return { status: 'reloaded', config: reloaded };
   });
+}
+
+/**
+ * Check whether any keys in the patch touch a restart-required field.
+ * Handles both flat dot-paths and nested objects.
+ */
+function changesRestartRequiredField(
+  _config: Config,
+  patch: Record<string, unknown>,
+): boolean {
+  for (const topKey of Object.keys(patch)) {
+    const value = patch[topKey];
+    if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      for (const subKey of Object.keys(value as Record<string, unknown>)) {
+        if (CONFIG_RESTART_REQUIRED.has(`${topKey}.${subKey}`)) return true;
+      }
+    } else {
+      if (CONFIG_RESTART_REQUIRED.has(topKey)) return true;
+    }
+  }
+  return false;
 }
 
 /**
  * Shallow-ish merge for config objects (one level of nesting).
  *
  * Defense in depth: `Object.hasOwn` check prevents prototype pollution
- * via `__proto__` keys. Even though the caller Zod-parses the input,
- * this guard costs nothing and catches the case if anyone calls
- * deepMerge directly in the future. (Security Review #4 MEDIUM)
+ * via `__proto__` keys.
  */
 function deepMerge(
   target: Record<string, unknown>,

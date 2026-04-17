@@ -23,6 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { readdir, copyFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { loadConfig } from '../config.js';
+import type { ConfigRef } from '../config.schema.js';
 import { createLogger } from '../logger.js';
 import { openDatabase } from '../db/index.js';
 import { runMigrations } from '../db/migrate.js';
@@ -39,8 +40,9 @@ import { initActiveRuns, reapDetachedRuns } from './agent-runner.js';
 const TASKS_DIR = join(homedir(), 'Development', '.tasks');
 
 async function main(): Promise<void> {
-  // 1. Config
-  const config = loadConfig();
+  // 1. Config — wrapped in a ref so hot-reload via PATCH /api/config
+  // propagates to all long-lived consumers without a daemon restart.
+  const configRef: ConfigRef = { current: loadConfig() };
 
   // 2. Logger
   const logsDir = join(TASKS_DIR, 'logs');
@@ -97,7 +99,7 @@ async function main(): Promise<void> {
   }
 
   // 5. Discover projects on disk
-  const discovery = await discoverProjects(db, config);
+  const discovery = await discoverProjects(db, configRef.current);
   logger.info(
     {
       registered: discovery.registered.length,
@@ -121,17 +123,17 @@ async function main(): Promise<void> {
 
   // 6. Create scheduler instance (but don't start it yet — HTTP routes
   //    need a reference to call resetProject on ticket moves and wakes).
-  const scheduler = new Scheduler(db, config, logger);
+  const scheduler = new Scheduler(db, configRef, logger);
 
   // 7. HTTP server — pass scheduler so routes can trigger heartbeat resets
-  const app = await createHttpServer({ config, db, logger, scheduler });
+  const app = await createHttpServer({ configRef, db, logger, scheduler });
 
   // 8. Listen
-  const port = config.ui.port;
+  const port = configRef.current.ui.port;
   await app.listen({ host: BIND_HOST, port });
   logger.info({ host: BIND_HOST, port }, 'Daemon listening');
 
-  if (!config.ai.auth_method) {
+  if (!configRef.current.ai.auth_method) {
     logger.warn(
       { setupUrl: `http://${BIND_HOST}:${port}/ui/setup` },
       'AI provider not configured — visit the setup wizard to configure authentication',
@@ -139,7 +141,7 @@ async function main(): Promise<void> {
   }
 
   // 9. Start filesystem watcher for live project discovery
-  const watcher = startWatcher(db, config, logger);
+  const watcher = startWatcher(db, configRef, logger);
   logger.info('Filesystem watcher started');
 
   // 10. Start the heartbeat scheduler (after listen so the server is ready)
@@ -180,7 +182,7 @@ async function main(): Promise<void> {
   logger.info({ pid: process.pid }, 'PID file written');
 
   // 14. Start background jobs (backup + retention cleanup)
-  const jobsInterval = startBackgroundJobs(db, config, logger);
+  const jobsInterval = startBackgroundJobs(db, configRef, logger);
   logger.info('Background jobs started');
 
   // Graceful shutdown — idempotent so concurrent SIGTERM + SIGINT don't

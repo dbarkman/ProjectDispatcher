@@ -4,7 +4,7 @@ import multipart from '@fastify/multipart';
 import { z } from 'zod';
 import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
-import { type Config } from '../config.schema.js';
+import { type ConfigRef } from '../config.schema.js';
 import type { Scheduler } from './scheduler.js';
 import { projectRoutes } from './routes/projects.js';
 import { projectTypeRoutes } from './routes/project-types.js';
@@ -18,10 +18,10 @@ import { discoveryRoutes } from './routes/discovery.js';
 import { setupUi } from '../ui/routes/setup.js';
 
 export interface HttpServerDeps {
-  config: Config;
+  configRef: ConfigRef;
   db: Database;
   logger: Logger;
-  scheduler?: Scheduler; // Optional: created before HTTP, started after listen
+  scheduler?: Scheduler;
 }
 
 /**
@@ -38,11 +38,7 @@ export interface HttpServerDeps {
  * non-local origins regardless.
  */
 export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyInstance> {
-  // `config` is `let` so the configRoutes setter can update it. All route
-  // handlers that read `config` close over this same binding, so a reload
-  // is immediately visible to subsequent requests. (Code Review #4 F-04)
-  let { config } = deps;
-  const { db, logger, scheduler } = deps;
+  const { configRef, db, logger, scheduler } = deps;
 
   const app = Fastify({
     // Fastify 5 uses `loggerInstance` for external Pino instances (not
@@ -98,7 +94,7 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
   // Setup wizard redirect: if AI provider not configured, redirect UI
   // routes to /ui/setup. API, static, and the setup page itself are exempt.
   app.addHook('onRequest', async (request, reply) => {
-    if (config.ai.auth_method) return;
+    if (configRef.current.ai.auth_method) return;
     const url = request.url;
     if (url.startsWith('/ui/setup') || url.startsWith('/api/') || url.startsWith('/static/')) return;
     if (url === '/' || url.startsWith('/ui/')) {
@@ -166,12 +162,12 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
   await ticketRoutes(app, db, scheduler);
   await attachmentRoutes(app, db);
   await agentRunRoutes(app, db);
-  await configRoutes(app, () => config, (c: Config) => { config = c; });
-  await aiConfigRoutes(app, () => config, (c: Config) => { config = c; });
-  await discoveryRoutes(app, db, config);
+  await configRoutes(app, configRef);
+  await aiConfigRoutes(app, configRef);
+  await discoveryRoutes(app, db, configRef);
 
   // Web UI (htmx + Handlebars) — serves HTML pages
-  await setupUi(app, db, config);
+  await setupUi(app, db, configRef);
 
   // Health check — no auth, lightweight, used by monitoring and CLI.
   app.get('/api/health', async () => {
@@ -184,7 +180,7 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
       status: 'ok',
       uptime_seconds: Math.floor(process.uptime()),
       database: 'connected',
-      port: config.ui.port,
+      port: configRef.current.ui.port,
     };
   });
 

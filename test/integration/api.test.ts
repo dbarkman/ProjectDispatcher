@@ -29,9 +29,10 @@ beforeEach(async () => {
   const cfgPath = join(tmpDir, 'config.json');
   writeFileSync(cfgPath, JSON.stringify({ ai: { auth_method: 'oauth' } }));
   const config = loadConfig(cfgPath);
+  const configRef = { current: config };
   const logger = createLogger(join(tmpDir, 'logs'));
 
-  app = await createHttpServer({ config, db, logger });
+  app = await createHttpServer({ configRef, db, logger });
   await app.ready();
 });
 
@@ -1025,10 +1026,11 @@ describe('Scheduler integration via project creation', () => {
     const config = loadConfig(schedCfgPath);
     const logger = createLogger(join(schedTmpDir, 'logs'));
 
-    scheduler = new Scheduler(schedDb, config, logger);
+    const configRef = { current: config };
+    scheduler = new Scheduler(schedDb, configRef, logger);
     scheduler.start();
 
-    schedApp = await createHttpServer({ config, db: schedDb, logger, scheduler });
+    schedApp = await createHttpServer({ configRef, db: schedDb, logger, scheduler });
     await schedApp.ready();
   });
 

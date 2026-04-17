@@ -23,7 +23,7 @@ beforeEach(() => {
   tmpDir = mkdtempSync(join(tmpdir(), 'pd-sched-test-'));
   const config = loadConfig(join(tmpDir, 'nonexistent.json'));
   const logger = createLogger(join(tmpDir, 'logs'));
-  scheduler = new Scheduler(db, config, logger);
+  scheduler = new Scheduler(db, { current: config }, logger);
 });
 
 afterEach(() => {

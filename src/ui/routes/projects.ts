@@ -19,7 +19,7 @@ import { resolvePromptPath } from '../../services/prompt-file.js';
 import { discoverProjects, folderDisplayName } from '../../daemon/discovery.js';
 import { getInboxCount } from './helpers.js';
 import { getTicketStatuses } from '../../db/queries/agent-runs.js';
-import type { Config } from '../../config.schema.js';
+import type { ConfigRef } from '../../config.schema.js';
 
 const uuidParam = z.object({ id: z.string().uuid() });
 
@@ -30,7 +30,7 @@ interface ProjectRoutesDeps {
 export async function projectUiRoutes(
   app: FastifyInstance,
   db: Database,
-  config: Config | undefined,
+  configRef: ConfigRef,
   deps: ProjectRoutesDeps,
 ): Promise<void> {
   // GET /ui/projects — projects list with register form
@@ -40,13 +40,11 @@ export async function projectUiRoutes(
 
     // Get discovered-but-not-registered folders
     let discovered: Array<{ path: string; name: string }> = [];
-    if (config) {
-      try {
-        const disc = await discoverProjects(db, config);
-        discovered = disc.discovered.map((p) => ({ path: p, name: folderDisplayName(p) }));
-      } catch {
-        // Discovery failure shouldn't break the page
-      }
+    try {
+      const disc = await discoverProjects(db, configRef.current);
+      discovered = disc.discovered.map((p) => ({ path: p, name: folderDisplayName(p) }));
+    } catch {
+      // Discovery failure shouldn't break the page
     }
 
     return reply.view('projects.hbs', {

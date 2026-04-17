@@ -26,7 +26,7 @@ beforeEach(async () => {
   const config = loadConfig(configPath);
   const logger = createLogger(join(tmpDir, 'logs'));
 
-  app = await createHttpServer({ config, db, logger });
+  app = await createHttpServer({ configRef: { current: config }, db, logger });
   await app.ready();
 });
 
@@ -82,7 +82,7 @@ describe('Setup wizard redirect with configured auth', () => {
     const config = loadConfig(cfgPath);
     const logger = createLogger(join(configuredTmpDir, 'logs'));
 
-    configuredApp = await createHttpServer({ config, db: configuredDb, logger });
+    configuredApp = await createHttpServer({ configRef: { current: config }, db: configuredDb, logger });
     await configuredApp.ready();
   });
 
@@ -187,7 +187,7 @@ describe('Settings page AI provider section', () => {
     const config = loadConfig(cfgPath);
     const logger = createLogger(join(configuredTmpDir, 'logs'));
 
-    configuredApp = await createHttpServer({ config, db: configuredDb, logger });
+    configuredApp = await createHttpServer({ configRef: { current: config }, db: configuredDb, logger });
     await configuredApp.ready();
   });
 

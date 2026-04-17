@@ -95,3 +95,18 @@ export const configSchema = z.object({
 });
 
 export type Config = z.infer<typeof configSchema>;
+
+export interface ConfigRef {
+  current: Config;
+}
+
+/**
+ * Dot-path keys that require a daemon restart to take effect.
+ * Fastify is already bound to the port; claude CLI path is
+ * sanity-checked at startup. The PATCH handler consults this
+ * set to return `restart_required: true` in the response.
+ */
+export const CONFIG_RESTART_REQUIRED: ReadonlySet<string> = new Set([
+  'ui.port',
+  'claude_cli.binary_path',
+]);

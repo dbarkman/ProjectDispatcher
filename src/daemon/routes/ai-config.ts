@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { reloadConfig, DEFAULT_CONFIG_PATH } from '../../config.js';
 import { CLAUDE_MODELS } from '../../types.js';
-import type { Config } from '../../config.schema.js';
+import type { ConfigRef } from '../../config.schema.js';
 
 const aiConfigBody = z.object({
   auth_method: z.enum(['oauth', 'api_key', 'custom']),
@@ -23,8 +23,7 @@ const testBody = z.object({
 
 export async function aiConfigRoutes(
   app: FastifyInstance,
-  getConfig: () => Config,
-  setConfig: (c: Config) => void,
+  configRef: ConfigRef,
   configPath: string = DEFAULT_CONFIG_PATH,
 ): Promise<void> {
 
@@ -52,7 +51,7 @@ export async function aiConfigRoutes(
 
     const testResult = await runConnectionTest(
       body.auth_method,
-      getConfig().claude_cli.binary_path,
+      configRef.current.claude_cli.binary_path,
       body.api_key,
       body.base_url,
     );
@@ -87,7 +86,7 @@ export async function aiConfigRoutes(
     await rename(tmpPath, configPath);
 
     const reloaded = reloadConfig(configPath);
-    setConfig(reloaded);
+    configRef.current = reloaded;
 
     return { status: 'ok', model: testResult.model };
   });
@@ -105,7 +104,7 @@ export async function aiConfigRoutes(
 
     const result = await runConnectionTest(
       body.auth_method,
-      getConfig().claude_cli.binary_path,
+      configRef.current.claude_cli.binary_path,
       body.api_key,
       body.base_url,
     );
