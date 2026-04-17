@@ -23,6 +23,7 @@ import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
 import { randomUUID } from 'node:crypto';
 import { cleanupOrphanedWorktrees } from './worktree.js';
+import { isProcessAlive } from './agent-runner.js';
 
 export interface RecoveryResult {
   orphanedRuns: number;
@@ -74,19 +75,37 @@ async function cleanupStaleWorktrees(db: Database, logger: Logger): Promise<numb
 export async function recoverFromCrash(db: Database, logger: Logger): Promise<RecoveryResult> {
   const childLogger = logger.child({ component: 'recovery' });
 
-  // Find all runs that were still 'running' when the daemon died
-  const orphanedRuns = db
-    .prepare("SELECT id, ticket_id, agent_type_id FROM agent_runs WHERE exit_status = 'running'")
-    .all() as Array<{ id: string; ticket_id: string; agent_type_id: string }>;
+  // Find all runs that were still 'running' when the daemon died.
+  // Runs with a PID that is still alive are detached agents that survived
+  // the restart — leave them running. Only recover truly dead ones.
+  const allRunningRuns = db
+    .prepare("SELECT id, ticket_id, agent_type_id, pid FROM agent_runs WHERE exit_status = 'running'")
+    .all() as Array<{ id: string; ticket_id: string; agent_type_id: string; pid: number | null }>;
+
+  const orphanedRuns: typeof allRunningRuns = [];
+  let survivingCount = 0;
+
+  for (const run of allRunningRuns) {
+    if (run.pid !== null && isProcessAlive(run.pid)) {
+      childLogger.info({ runId: run.id, pid: run.pid }, 'Detached agent still alive — leaving it running');
+      survivingCount++;
+    } else {
+      orphanedRuns.push(run);
+    }
+  }
 
   if (orphanedRuns.length === 0) {
-    childLogger.debug('No orphaned runs found — clean startup');
+    if (survivingCount > 0) {
+      childLogger.info({ surviving: survivingCount }, 'All running agents still alive — no recovery needed');
+    } else {
+      childLogger.debug('No orphaned runs found — clean startup');
+    }
     const cleanedWorktrees = await cleanupStaleWorktrees(db, childLogger);
     return { orphanedRuns: 0, releasedTickets: 0, movedToHuman: 0, cleanedWorktrees };
   }
 
   childLogger.warn(
-    { count: orphanedRuns.length, runIds: orphanedRuns.map((r) => r.id) },
+    { count: orphanedRuns.length, surviving: survivingCount, runIds: orphanedRuns.map((r) => r.id) },
     'Orphaned agent runs found — cleaning up',
   );
 

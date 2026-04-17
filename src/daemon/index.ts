@@ -34,6 +34,7 @@ import { discoverProjects } from './discovery.js';
 import { startWatcher } from './watcher.js';
 import { recoverFromCrash } from './recovery.js';
 import { Scheduler } from './scheduler.js';
+import { initActiveRuns, reapDetachedRuns } from './agent-runner.js';
 
 const TASKS_DIR = join(homedir(), 'Development', '.tasks');
 
@@ -107,11 +108,16 @@ async function main(): Promise<void> {
     'Project discovery complete',
   );
 
-  // 5. Crash recovery — clean up stale state BEFORE the scheduler starts
+  // 5. Crash recovery — clean up stale state BEFORE the scheduler starts.
+  // PID-aware: detached agents that survived the restart are left running.
   const recovery = await recoverFromCrash(db, logger);
   if (recovery.orphanedRuns > 0) {
     logger.warn(recovery, 'Crash recovery cleaned up stale state');
   }
+
+  // 5b. Rebuild in-memory concurrency map from DB (accounts for surviving
+  // detached agents that recovery left as 'running').
+  initActiveRuns(db);
 
   // 6. Create scheduler instance (but don't start it yet — HTTP routes
   //    need a reference to call resetProject on ticket moves and wakes).
@@ -139,7 +145,17 @@ async function main(): Promise<void> {
   // 10. Start the heartbeat scheduler (after listen so the server is ready)
   scheduler.start();
 
-  // 11. Health watchdog — detect scheduler-dead-but-daemon-alive.
+  // 11. Process reaper — poll detached agent PIDs for exit/timeout.
+  const REAPER_INTERVAL_MS = 30_000;
+  const reaperInterval = setInterval(() => {
+    try {
+      reapDetachedRuns(db, logger);
+    } catch {
+      // DB may be closed during shutdown — ignore
+    }
+  }, REAPER_INTERVAL_MS);
+
+  // 12. Health watchdog — detect scheduler-dead-but-daemon-alive.
   const WATCHDOG_INTERVAL_MS = 60_000;
   const watchdogInterval = setInterval(() => {
     try {
@@ -159,11 +175,11 @@ async function main(): Promise<void> {
     }
   }, WATCHDOG_INTERVAL_MS);
 
-  // 12. Write PID file (Gap fix #14)
+  // 13. Write PID file (Gap fix #14)
   await writePidFile();
   logger.info({ pid: process.pid }, 'PID file written');
 
-  // 12. Start background jobs (backup + retention cleanup)
+  // 14. Start background jobs (backup + retention cleanup)
   const jobsInterval = startBackgroundJobs(db, config, logger);
   logger.info('Background jobs started');
 
@@ -174,6 +190,7 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info({ signal }, 'Shutdown signal received');
+    clearInterval(reaperInterval);
     clearInterval(watchdogInterval);
     clearInterval(jobsInterval);
     try {

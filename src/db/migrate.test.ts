@@ -80,6 +80,7 @@ describe('runMigrations', () => {
         '003_project_scoped_templates.sql',
         '004_ticket_numbering.sql',
         '005_worktree_support.sql',
+        '006_agent_pid.sql',
       ];
       expect(first.applied).toEqual(expectedMigrations);
       expect(first.skipped).toEqual([]);

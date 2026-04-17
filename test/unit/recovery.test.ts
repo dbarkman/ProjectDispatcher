@@ -139,4 +139,90 @@ describe('recoverFromCrash', () => {
     const second = await recoverFromCrash(db, silentLogger);
     expect(second.orphanedRuns).toBe(0); // Already recovered
   });
+
+  it('leaves detached agents with alive PIDs running', async () => {
+    const project = createProject(db, {
+      name: 'Detached',
+      path: '/tmp/recovery-detached',
+      projectTypeId: 'software-dev',
+    });
+    const ticket = createTicket(db, { projectId: project.id, title: 'Detached alive' });
+    moveTicket(db, ticket.id, { toColumn: 'coding-agent' });
+
+    const runId = randomUUID();
+    db.prepare(
+      `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, exit_status, pid)
+       VALUES (?, ?, 'coding-agent', 'claude-opus-4-6', ?, 'running', ?)`,
+    ).run(runId, ticket.id, Date.now(), process.pid); // current PID = alive
+
+    db.prepare(
+      'UPDATE tickets SET claimed_by_run_id = ?, claimed_at = ? WHERE id = ?',
+    ).run(runId, Date.now(), ticket.id);
+
+    const result = await recoverFromCrash(db, silentLogger);
+
+    expect(result.orphanedRuns).toBe(0);
+    expect(result.movedToHuman).toBe(0);
+
+    const run = db.prepare('SELECT exit_status FROM agent_runs WHERE id = ?').get(runId) as {
+      exit_status: string;
+    };
+    expect(run.exit_status).toBe('running');
+
+    const ticketRow = db.prepare('SELECT claimed_by_run_id FROM tickets WHERE id = ?').get(ticket.id) as {
+      claimed_by_run_id: string | null;
+    };
+    expect(ticketRow.claimed_by_run_id).toBe(runId);
+  });
+
+  it('recovers runs with dead PIDs (process no longer exists)', async () => {
+    const project = createProject(db, {
+      name: 'DeadPid',
+      path: '/tmp/recovery-dead-pid',
+      projectTypeId: 'software-dev',
+    });
+    const ticket = createTicket(db, { projectId: project.id, title: 'Dead PID' });
+    moveTicket(db, ticket.id, { toColumn: 'coding-agent' });
+
+    const runId = randomUUID();
+    db.prepare(
+      `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, exit_status, pid)
+       VALUES (?, ?, 'coding-agent', 'claude-opus-4-6', ?, 'running', ?)`,
+    ).run(runId, ticket.id, Date.now(), 99999999); // dead PID
+
+    const result = await recoverFromCrash(db, silentLogger);
+
+    expect(result.orphanedRuns).toBe(1);
+    expect(result.movedToHuman).toBe(1);
+
+    const run = db.prepare('SELECT exit_status FROM agent_runs WHERE id = ?').get(runId) as {
+      exit_status: string;
+    };
+    expect(run.exit_status).toBe('crashed');
+  });
+
+  it('recovers runs without a PID (legacy pre-detach rows)', async () => {
+    const project = createProject(db, {
+      name: 'NoPid',
+      path: '/tmp/recovery-no-pid',
+      projectTypeId: 'software-dev',
+    });
+    const ticket = createTicket(db, { projectId: project.id, title: 'No PID legacy' });
+    moveTicket(db, ticket.id, { toColumn: 'coding-agent' });
+
+    const runId = randomUUID();
+    db.prepare(
+      `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, exit_status)
+       VALUES (?, ?, 'coding-agent', 'claude-opus-4-6', ?, 'running')`,
+    ).run(runId, ticket.id, Date.now()); // no PID column value
+
+    const result = await recoverFromCrash(db, silentLogger);
+
+    expect(result.orphanedRuns).toBe(1);
+
+    const run = db.prepare('SELECT exit_status FROM agent_runs WHERE id = ?').get(runId) as {
+      exit_status: string;
+    };
+    expect(run.exit_status).toBe('crashed');
+  });
 });
