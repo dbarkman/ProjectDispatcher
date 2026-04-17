@@ -40,8 +40,10 @@
 </head>
 <body class="dark h-full bg-navy-950 text-gray-200">
   <div class="flex h-full">
-    <!-- Sidebar (Gap fix #7 — collapsible) -->
-    <aside id="sidebar" class="w-56 bg-navy-900 border-r border-navy-700 flex flex-col shrink-0 transition-all duration-200">
+    <!-- Mobile sidebar backdrop -->
+    <div id="sidebar-backdrop" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden" onclick="closeMobileSidebar()"></div>
+    <!-- Sidebar (Gap fix #7 — collapsible, mobile-responsive) -->
+    <aside id="sidebar" class="w-56 bg-navy-900 border-r border-navy-700 flex flex-col shrink-0 transition-all duration-200 fixed inset-y-0 left-0 z-40 -translate-x-full md:translate-x-0 md:static md:z-auto">
       <!-- Logo + collapse toggle -->
       <div class="px-4 py-4 border-b border-navy-700 flex items-center justify-between">
         <div class="sidebar-expanded">
@@ -104,23 +106,26 @@
     <!-- Main content -->
     <main class="flex-1 overflow-y-auto">
       <!-- Top bar -->
-      <header class="sticky top-0 z-10 bg-navy-900 border-b border-navy-700 px-6 py-3 flex items-center justify-between">
-        <div>
-          {{#if breadcrumbs}}
-          <nav class="text-sm text-gray-400">
-            {{#each breadcrumbs}}
-            {{#if @last}}
-              <span class="text-gray-200">{{this.label}}</span>
-            {{else}}
-              <a href="{{this.href}}" class="hover:text-gray-200">{{this.label}}</a>
-              <span class="mx-1">/</span>
+      <header class="sticky top-0 z-10 bg-navy-900 border-b border-navy-700 px-3 md:px-6 py-3 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <button id="hamburger" class="md:hidden text-gray-400 hover:text-white text-xl leading-none" onclick="openMobileSidebar()" title="Open menu">&#9776;</button>
+          <div>
+            {{#if breadcrumbs}}
+            <nav class="text-sm text-gray-400">
+              {{#each breadcrumbs}}
+              {{#if @last}}
+                <span class="text-gray-200">{{this.label}}</span>
+              {{else}}
+                <a href="{{this.href}}" class="hover:text-gray-200">{{this.label}}</a>
+                <span class="mx-1">/</span>
+              {{/if}}
+              {{/each}}
+            </nav>
             {{/if}}
-            {{/each}}
-          </nav>
-          {{/if}}
-          {{#if pageTitle}}
-          <h2 class="text-xl font-semibold text-white mt-0.5">{{pageTitle}}</h2>
-          {{/if}}
+            {{#if pageTitle}}
+            <h2 class="text-xl font-semibold text-white mt-0.5">{{pageTitle}}</h2>
+            {{/if}}
+          </div>
         </div>
         {{!-- Actions slot removed: the {{{actions}}} triple-brace was an
              XSS-prone pattern. When action buttons are needed, add them as
@@ -129,35 +134,66 @@
       </header>
 
       <!-- Page content -->
-      <div class="p-6">
+      <div class="p-3 md:p-6">
         {{{body}}}
       </div>
     </main>
   </div>
-  <!-- Sidebar collapse script (Gap fix #7) -->
+  <!-- Sidebar collapse + mobile responsive script -->
   <script>
-    function toggleSidebar() {
+    const isMobile = () => window.innerWidth < 768;
+
+    const openMobileSidebar = () => {
+      const sidebar = document.getElementById('sidebar');
+      const backdrop = document.getElementById('sidebar-backdrop');
+      sidebar.classList.remove('w-16');
+      sidebar.classList.add('w-56');
+      document.getElementById('collapse-icon').innerHTML = '&#9664;';
+      document.querySelectorAll('.sidebar-expanded').forEach(el => el.style.display = '');
+      document.querySelectorAll('.nav-label').forEach(el => el.style.display = '');
+      sidebar.classList.remove('-translate-x-full');
+      sidebar.classList.add('translate-x-0');
+      backdrop.classList.remove('hidden');
+    };
+
+    const closeMobileSidebar = () => {
+      const sidebar = document.getElementById('sidebar');
+      const backdrop = document.getElementById('sidebar-backdrop');
+      sidebar.classList.add('-translate-x-full');
+      sidebar.classList.remove('translate-x-0');
+      backdrop.classList.add('hidden');
+    };
+
+    const toggleSidebar = () => {
+      if (isMobile()) {
+        closeMobileSidebar();
+        return;
+      }
       const sidebar = document.getElementById('sidebar');
       const icon = document.getElementById('collapse-icon');
       const expanded = document.querySelectorAll('.sidebar-expanded');
       const labels = document.querySelectorAll('.nav-label');
 
       if (sidebar.classList.contains('w-56')) {
-        // Collapse
         sidebar.classList.remove('w-56');
         sidebar.classList.add('w-16');
-        icon.innerHTML = '&#9654;'; // right arrow
+        icon.innerHTML = '&#9654;';
         expanded.forEach(el => el.style.display = 'none');
         labels.forEach(el => el.style.display = 'none');
       } else {
-        // Expand
         sidebar.classList.remove('w-16');
         sidebar.classList.add('w-56');
-        icon.innerHTML = '&#9664;'; // left arrow
+        icon.innerHTML = '&#9664;';
         expanded.forEach(el => el.style.display = '');
         labels.forEach(el => el.style.display = '');
       }
-    }
+    };
+
+    window.addEventListener('resize', () => {
+      if (!isMobile()) {
+        closeMobileSidebar();
+      }
+    });
   </script>
 </body>
 </html>

@@ -131,6 +131,27 @@ describe('Security response headers', () => {
     expect(res.headers['referrer-policy']).toBe('same-origin');
   });
 
+  it('sets X-Frame-Options: DENY', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { host: '127.0.0.1:5757' },
+    });
+    expect(res.headers['x-frame-options']).toBe('DENY');
+  });
+
+  it('sets Content-Security-Policy', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { host: '127.0.0.1:5757' },
+    });
+    const csp = res.headers['content-security-policy'] as string;
+    expect(csp).toContain("default-src 'self'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("object-src 'none'");
+  });
+
   it('includes security headers even on 403 responses', async () => {
     const res = await app.inject({
       method: 'GET',
@@ -140,5 +161,7 @@ describe('Security response headers', () => {
     expect(res.statusCode).toBe(403);
     expect(res.headers['x-content-type-options']).toBe('nosniff');
     expect(res.headers['referrer-policy']).toBe('same-origin');
+    expect(res.headers['x-frame-options']).toBe('DENY');
+    expect(res.headers['content-security-policy']).toContain("default-src 'self'");
   });
 });
