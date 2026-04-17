@@ -113,6 +113,27 @@ describe('Scheduler.scheduleNewProject()', () => {
   });
 });
 
+describe('Scheduler.timerCount', () => {
+  it('returns 0 when no projects scheduled', () => {
+    expect(scheduler.timerCount).toBe(0);
+  });
+
+  it('returns count of active project timers', () => {
+    createProject(db, { name: 'A', path: '/a', projectTypeId: 'software-dev' });
+    createProject(db, { name: 'B', path: '/b', projectTypeId: 'software-dev' });
+    scheduler.start();
+    expect(scheduler.timerCount).toBe(2);
+  });
+
+  it('returns 0 after stop()', () => {
+    createProject(db, { name: 'C', path: '/c', projectTypeId: 'software-dev' });
+    scheduler.start();
+    expect(scheduler.timerCount).toBe(1);
+    scheduler.stop();
+    expect(scheduler.timerCount).toBe(0);
+  });
+});
+
 describe('Scheduler.resetProject()', () => {
   it('resets heartbeat to near-immediate', () => {
     const p = createProject(db, { name: 'Reset', path: '/reset', projectTypeId: 'software-dev' });

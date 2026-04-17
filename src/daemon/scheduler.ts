@@ -59,6 +59,10 @@ export class Scheduler {
     this.logger = logger.child({ component: 'scheduler' });
   }
 
+  get timerCount(): number {
+    return this.timers.size;
+  }
+
   /**
    * Start the scheduler: load all active projects and schedule their
    * first heartbeat based on the DB state.

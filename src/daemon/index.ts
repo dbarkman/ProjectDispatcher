@@ -127,7 +127,27 @@ async function main(): Promise<void> {
   // 10. Start the heartbeat scheduler (after listen so the server is ready)
   scheduler.start();
 
-  // 11. Write PID file (Gap fix #14)
+  // 11. Health watchdog — detect scheduler-dead-but-daemon-alive.
+  const WATCHDOG_INTERVAL_MS = 60_000;
+  const watchdogInterval = setInterval(() => {
+    try {
+      const activeCount = (db
+        .prepare("SELECT COUNT(*) AS c FROM projects WHERE status = 'active'")
+        .get() as { c: number }).c;
+
+      if (activeCount > 0 && scheduler.timerCount === 0) {
+        logger.warn(
+          { activeProjects: activeCount },
+          'Scheduler has no active timers despite active projects — restarting scheduler',
+        );
+        scheduler.start();
+      }
+    } catch {
+      // DB may be closed during shutdown — ignore
+    }
+  }, WATCHDOG_INTERVAL_MS);
+
+  // 12. Write PID file (Gap fix #14)
   await writePidFile();
   logger.info({ pid: process.pid }, 'PID file written');
 
@@ -142,6 +162,7 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info({ signal }, 'Shutdown signal received');
+    clearInterval(watchdogInterval);
     clearInterval(jobsInterval);
     try {
       scheduler.stop();
