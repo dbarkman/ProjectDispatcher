@@ -178,6 +178,22 @@ async function main(): Promise<void> {
 
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
+
+  // Process-level resilience. A single bad request (e.g. a filename with
+  // non-ASCII chars in a Content-Disposition header) must NOT kill the
+  // daemon. These handlers catch what Fastify's error handler misses —
+  // errors thrown synchronously inside Node's HTTP response writer bypass
+  // the framework's error handler entirely. Without this, one malformed
+  // attachment download crashed the entire server (ERR_INVALID_CHAR).
+  //
+  // We log fatal-level but do NOT exit. The request that caused the error
+  // already failed; the server stays up for everything else.
+  process.on('uncaughtException', (err) => {
+    logger.fatal({ err }, 'Uncaught exception — daemon staying alive');
+  });
+  process.on('unhandledRejection', (reason) => {
+    logger.fatal({ err: reason }, 'Unhandled rejection — daemon staying alive');
+  });
 }
 
 main().catch((err) => {

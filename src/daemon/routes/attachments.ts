@@ -145,10 +145,20 @@ export async function attachmentRoutes(app: FastifyInstance, db: Database): Prom
       return reply.status(404).send({ error: 'Attachment file missing from disk' });
     }
 
+    // Sanitize filename for the Content-Disposition header. macOS screenshot
+    // names contain non-ASCII chars (e.g. Unicode non-breaking spaces) that
+    // Node's setHeader rejects with ERR_INVALID_CHAR. This uncaught exception
+    // crashed the daemon — a single bad attachment filename killed the server.
+    // Strip to printable ASCII; the stored_name (UUID) is what hits the
+    // filesystem, so the display name is purely cosmetic.
+    const safeFilename = attachment.filename
+      .replace(/[^\x20-\x7E]/g, '_')  // non-ASCII → underscore
+      .replace(/"/g, '\\"');            // escape quotes for header
+
     const stream = createReadStream(filePath);
     return reply
       .header('Content-Type', attachment.mime_type)
-      .header('Content-Disposition', `inline; filename="${attachment.filename.replace(/"/g, '\\"')}"`)
+      .header('Content-Disposition', `inline; filename="${safeFilename}"`)
       .header('Cache-Control', 'private, max-age=86400')
       .send(stream);
   });
