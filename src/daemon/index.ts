@@ -189,7 +189,12 @@ async function main(): Promise<void> {
   // We log fatal-level but do NOT exit. The request that caused the error
   // already failed; the server stays up for everything else.
   process.on('uncaughtException', (err) => {
-    logger.fatal({ err }, 'Uncaught exception — daemon staying alive');
+    logger.fatal({ err }, 'Uncaught exception — exiting for clean restart');
+    // Exit and let the init system (LaunchAgent / systemd / PM2) restart
+    // the process cleanly. Staying alive after an uncaught synchronous
+    // exception risks serving requests from a corrupted process state.
+    // (Code review MEDIUM: Node docs explicitly warn against staying alive.)
+    process.exit(1);
   });
   process.on('unhandledRejection', (reason) => {
     logger.fatal({ err: reason }, 'Unhandled rejection — daemon staying alive');
