@@ -12,14 +12,14 @@ const UNIT_NAME = 'projectdispatcher';
 const UNIT_DIR = join(homedir(), '.config', 'systemd', 'user');
 const UNIT_PATH = join(UNIT_DIR, `${UNIT_NAME}.service`);
 
-interface ServiceConfig {
+export interface ServiceConfig {
   daemonEntryPath: string;
   nodePath: string;
   logsDir: string;
   workingDir: string;
 }
 
-function buildUnit(config: ServiceConfig): string {
+export function buildUnit(config: ServiceConfig): string {
   return `[Unit]
 Description=Project Dispatcher Daemon
 After=network.target

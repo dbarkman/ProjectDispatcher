@@ -12,14 +12,14 @@ const PLIST_NAME = 'com.projectdispatcher.daemon';
 const PLIST_DIR = join(homedir(), 'Library', 'LaunchAgents');
 const PLIST_PATH = join(PLIST_DIR, `${PLIST_NAME}.plist`);
 
-interface ServiceConfig {
+export interface ServiceConfig {
   daemonEntryPath: string; // Absolute path to dist/daemon/index.js
   nodePath: string; // Absolute path to node binary
   logsDir: string;
   workingDir: string;
 }
 
-function buildPlist(config: ServiceConfig): string {
+export function buildPlist(config: ServiceConfig): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
