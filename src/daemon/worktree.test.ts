@@ -162,6 +162,23 @@ describe('git worktree operations', () => {
       expect(result.merged).toBe(false);
       expect(result.error).toContain('does not exist');
     });
+
+    it('refuses to merge when not on main branch', async () => {
+      const wtPath = await createWorktree(repoDir, TICKET_ID, logger);
+      await execFileAsync('touch', ['feature.txt'], { cwd: wtPath });
+      await git(wtPath, ['add', '.']);
+      await git(wtPath, ['commit', '-m', 'feature work']);
+
+      await git(repoDir, ['checkout', '-b', 'some-other-branch']);
+
+      const result = await mergeWorktreeBranch(repoDir, TICKET_ID, logger);
+      expect(result.merged).toBe(false);
+      expect(result.conflicted).toBe(false);
+      expect(result.error).toContain('some-other-branch');
+      expect(result.error).toContain('expected main or master');
+
+      await git(repoDir, ['checkout', 'main']);
+    });
   });
 
   describe('mergeAndCleanup', () => {

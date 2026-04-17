@@ -150,9 +150,20 @@ export interface MergeResult {
   error: string | null;
 }
 
+async function getCurrentBranch(projectPath: string): Promise<string | null> {
+  try {
+    return await git(projectPath, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  } catch {
+    return null;
+  }
+}
+
+const MAIN_BRANCH_NAMES = new Set(['main', 'master']);
+
 /**
- * Merge a ticket branch into the current branch of the main working copy.
+ * Merge a ticket branch into main of the main working copy.
  *
+ * Verifies the working copy is on main/master before merging.
  * On conflict: aborts the merge and returns { conflicted: true }.
  * Caller is responsible for moving the ticket to human.
  */
@@ -165,6 +176,15 @@ export async function mergeWorktreeBranch(
 
   if (!await branchExists(projectPath, branch)) {
     return { merged: false, conflicted: false, error: `Branch ${branch} does not exist` };
+  }
+
+  const currentBranch = await getCurrentBranch(projectPath);
+  if (!currentBranch || !MAIN_BRANCH_NAMES.has(currentBranch)) {
+    return {
+      merged: false,
+      conflicted: false,
+      error: `Refusing to merge: working copy is on '${currentBranch ?? 'detached HEAD'}', expected main or master`,
+    };
   }
 
   try {

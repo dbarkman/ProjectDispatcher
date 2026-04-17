@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { access, mkdir } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -11,7 +11,7 @@ import type { Config } from '../config.schema.js';
 import { DEFAULT_DB_PATH, DEFAULT_TASKS_DIR } from '../db/index.js';
 import { addComment } from '../db/queries/tickets.js';
 import { buildPrompt } from '../services/prompt-builder.js';
-import { createWorktree, worktreePath } from './worktree.js';
+import { createWorktree } from './worktree.js';
 
 // Portable __dirname for ESM (Review #6 L4 — import.meta.dirname requires Node 21.2)
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -120,19 +120,8 @@ export async function runAgent(
   let agentWorktreePath: string | null = null;
 
   if (config.agents.parallel_coding) {
-    try {
-      const expectedPath = worktreePath(project.path, ticketId);
-      try {
-        await access(expectedPath);
-        agentCwd = expectedPath;
-        agentWorktreePath = expectedPath;
-      } catch {
-        agentCwd = await createWorktree(project.path, ticketId, logger);
-        agentWorktreePath = agentCwd;
-      }
-    } catch (err) {
-      logger.error({ err, ticketId, projectId }, 'Failed to create worktree — falling back to project path');
-    }
+    agentCwd = await createWorktree(project.path, ticketId, logger);
+    agentWorktreePath = agentCwd;
   }
 
   // Create agent_runs row
