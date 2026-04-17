@@ -22,11 +22,47 @@
 import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
 import { randomUUID } from 'node:crypto';
+import { cleanupOrphanedWorktrees } from './worktree.js';
 
 export interface RecoveryResult {
   orphanedRuns: number;
   releasedTickets: number;
   movedToHuman: number;
+  cleanedWorktrees: number;
+}
+
+/**
+ * Clean up worktrees whose tickets are in terminal states (done/human)
+ * or whose tickets no longer exist. Runs after orphaned-run recovery.
+ */
+async function cleanupStaleWorktrees(db: Database, logger: Logger): Promise<number> {
+  const activeProjects = db
+    .prepare("SELECT id, path FROM projects WHERE status = 'active'")
+    .all() as Array<{ id: string; path: string }>;
+
+  let totalCleaned = 0;
+
+  for (const project of activeProjects) {
+    const cleaned = await cleanupOrphanedWorktrees(
+      project.path,
+      (ticketId: string) => {
+        const ticket = db
+          .prepare('SELECT "column" FROM tickets WHERE id = ?')
+          .get(ticketId) as { column: string } | undefined;
+
+        if (!ticket) return true;
+        return ticket.column === 'done' || ticket.column === 'human';
+      },
+      logger,
+    );
+    totalCleaned += cleaned;
+  }
+
+  if (totalCleaned > 0) {
+    logger.info({ cleaned: totalCleaned }, 'Stale worktrees cleaned up');
+  }
+
+  return totalCleaned;
 }
 
 /**
@@ -35,7 +71,7 @@ export interface RecoveryResult {
  * Runs inside a single transaction so partial recovery doesn't leave
  * inconsistent state. Either all orphaned runs are cleaned up or none.
  */
-export function recoverFromCrash(db: Database, logger: Logger): RecoveryResult {
+export async function recoverFromCrash(db: Database, logger: Logger): Promise<RecoveryResult> {
   const childLogger = logger.child({ component: 'recovery' });
 
   // Find all runs that were still 'running' when the daemon died
@@ -45,7 +81,8 @@ export function recoverFromCrash(db: Database, logger: Logger): RecoveryResult {
 
   if (orphanedRuns.length === 0) {
     childLogger.debug('No orphaned runs found — clean startup');
-    return { orphanedRuns: 0, releasedTickets: 0, movedToHuman: 0 };
+    const cleanedWorktrees = await cleanupStaleWorktrees(db, childLogger);
+    return { orphanedRuns: 0, releasedTickets: 0, movedToHuman: 0, cleanedWorktrees };
   }
 
   childLogger.warn(
@@ -188,5 +225,7 @@ export function recoverFromCrash(db: Database, logger: Logger): RecoveryResult {
     'Crash recovery complete',
   );
 
-  return { orphanedRuns: orphanedRuns.length, releasedTickets, movedToHuman };
+  const cleanedWorktrees = await cleanupStaleWorktrees(db, childLogger);
+
+  return { orphanedRuns: orphanedRuns.length, releasedTickets, movedToHuman, cleanedWorktrees };
 }

@@ -96,7 +96,7 @@ async function main(): Promise<void> {
   );
 
   // 5. Crash recovery — clean up stale state BEFORE the scheduler starts
-  const recovery = recoverFromCrash(db, logger);
+  const recovery = await recoverFromCrash(db, logger);
   if (recovery.orphanedRuns > 0) {
     logger.warn(recovery, 'Crash recovery cleaned up stale state');
   }

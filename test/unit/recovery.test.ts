@@ -22,14 +22,14 @@ beforeEach(() => {
 });
 
 describe('recoverFromCrash', () => {
-  it('returns zeros on a clean database with no orphaned runs', () => {
-    const result = recoverFromCrash(db, silentLogger);
+  it('returns zeros on a clean database with no orphaned runs', async () => {
+    const result = await recoverFromCrash(db, silentLogger);
     expect(result.orphanedRuns).toBe(0);
     expect(result.releasedTickets).toBe(0);
     expect(result.movedToHuman).toBe(0);
   });
 
-  it('marks orphaned runs as crashed and releases ticket claims', () => {
+  it('marks orphaned runs as crashed and releases ticket claims', async () => {
     const project = createProject(db, {
       name: 'Test',
       path: '/tmp/recovery-test',
@@ -51,7 +51,7 @@ describe('recoverFromCrash', () => {
     ).run(runId, Date.now(), ticket.id);
 
     // Now simulate a daemon crash — run recovery
-    const result = recoverFromCrash(db, silentLogger);
+    const result = await recoverFromCrash(db, silentLogger);
 
     expect(result.orphanedRuns).toBe(1);
     expect(result.releasedTickets).toBe(1);
@@ -85,7 +85,7 @@ describe('recoverFromCrash', () => {
     expect(blockComment!.body).toContain('interrupted by a daemon crash');
   });
 
-  it('does not move a ticket that is already in the human column', () => {
+  it('does not move a ticket that is already in the human column', async () => {
     const project = createProject(db, {
       name: 'Test2',
       path: '/tmp/recovery-test-2',
@@ -104,7 +104,7 @@ describe('recoverFromCrash', () => {
       'UPDATE tickets SET claimed_by_run_id = ? WHERE id = ?',
     ).run(runId, ticket.id);
 
-    const result = recoverFromCrash(db, silentLogger);
+    const result = await recoverFromCrash(db, silentLogger);
 
     expect(result.orphanedRuns).toBe(1);
     expect(result.movedToHuman).toBe(0); // Already in human — no move
@@ -118,7 +118,7 @@ describe('recoverFromCrash', () => {
     expect(moveComments).toHaveLength(0);
   });
 
-  it('is idempotent — running twice does not double-recover', () => {
+  it('is idempotent — running twice does not double-recover', async () => {
     const project = createProject(db, {
       name: 'Test3',
       path: '/tmp/recovery-test-3',
@@ -133,10 +133,10 @@ describe('recoverFromCrash', () => {
        VALUES (?, ?, 'coding-agent', 'claude-opus-4-6', ?, 'running')`,
     ).run(runId, ticket.id, Date.now());
 
-    const first = recoverFromCrash(db, silentLogger);
+    const first = await recoverFromCrash(db, silentLogger);
     expect(first.orphanedRuns).toBe(1);
 
-    const second = recoverFromCrash(db, silentLogger);
+    const second = await recoverFromCrash(db, silentLogger);
     expect(second.orphanedRuns).toBe(0); // Already recovered
   });
 });

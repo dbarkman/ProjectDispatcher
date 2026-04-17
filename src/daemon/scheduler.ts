@@ -23,6 +23,7 @@ import type { Logger } from 'pino';
 import { randomUUID } from 'node:crypto';
 import type { Config } from '../config.schema.js';
 import { runAgent } from './agent-runner.js';
+import { mergeAndCleanup } from './worktree.js';
 
 interface HeartbeatRow {
   project_id: string;
@@ -345,10 +346,73 @@ export class Scheduler {
       }
     }
 
+    // Merge completed worktree branches for tickets that have reached 'done'.
+    if (this.config.agents.parallel_coding) {
+      await this.mergeCompletedWorktrees(projectId);
+    }
+
     if (foundWork) {
       this.resetToBase(projectId);
     } else {
       this.applyBackoff(projectId);
+    }
+  }
+
+  /**
+   * Merge and clean up worktree branches for tickets that have reached 'done'
+   * and still have an active worktree (recorded in agent_runs.worktree_path).
+   */
+  private async mergeCompletedWorktrees(projectId: string): Promise<void> {
+    const project = this.db
+      .prepare('SELECT path FROM projects WHERE id = ?')
+      .get(projectId) as { path: string } | undefined;
+    if (!project) return;
+
+    // Find tickets in 'done' that have agent_runs with a worktree_path.
+    // DISTINCT because multiple runs (coder + reviewer) share the same worktree.
+    const doneTickets = this.db
+      .prepare(
+        `SELECT DISTINCT t.id FROM tickets t
+         JOIN agent_runs ar ON ar.ticket_id = t.id
+         WHERE t.project_id = ? AND t."column" = 'done' AND ar.worktree_path IS NOT NULL`,
+      )
+      .all(projectId) as Array<{ id: string }>;
+
+    for (const ticket of doneTickets) {
+      try {
+        const result = await mergeAndCleanup(project.path, ticket.id, this.logger);
+
+        if (result.merged) {
+          // Clear worktree_path on all runs for this ticket
+          this.db.prepare(
+            'UPDATE agent_runs SET worktree_path = NULL WHERE ticket_id = ?',
+          ).run(ticket.id);
+          this.logger.info({ ticketId: ticket.id }, 'Worktree merged and cleaned up');
+        } else if (result.conflicted) {
+          // Move ticket back to human with conflict info
+          const now = Date.now();
+          this.db.transaction(() => {
+            this.db.prepare(
+              `UPDATE tickets SET "column" = 'human', updated_at = ? WHERE id = ?`,
+            ).run(now, ticket.id);
+            this.db.prepare(
+              `INSERT INTO ticket_comments (id, ticket_id, type, author, body, meta, created_at)
+               VALUES (?, ?, 'block', 'system:merge', ?, ?, ?)`,
+            ).run(
+              randomUUID(),
+              ticket.id,
+              `Merge conflict when merging branch ticket/${ticket.id} into main. Manual resolution required.`,
+              JSON.stringify({ error: result.error }),
+              now,
+            );
+          })();
+          this.logger.warn({ ticketId: ticket.id }, 'Merge conflict — ticket moved to human');
+        } else {
+          this.logger.warn({ ticketId: ticket.id, error: result.error }, 'Merge failed');
+        }
+      } catch (err) {
+        this.logger.error({ err, ticketId: ticket.id }, 'mergeAndCleanup threw — skipping');
+      }
     }
   }
 

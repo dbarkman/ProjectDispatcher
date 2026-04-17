@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { access, mkdir } from 'node:fs/promises';
 import { createWriteStream } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -11,6 +11,7 @@ import type { Config } from '../config.schema.js';
 import { DEFAULT_DB_PATH, DEFAULT_TASKS_DIR } from '../db/index.js';
 import { addComment } from '../db/queries/tickets.js';
 import { buildPrompt } from '../services/prompt-builder.js';
+import { createWorktree, worktreePath } from './worktree.js';
 
 // Portable __dirname for ESM (Review #6 L4 — import.meta.dirname requires Node 21.2)
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -112,17 +113,39 @@ export async function runAgent(
     );
   }
 
+  // Resolve the agent's working directory. When parallel_coding is enabled,
+  // each ticket gets its own git worktree so multiple agents can work on the
+  // same project without file conflicts.
+  let agentCwd = project.path;
+  let agentWorktreePath: string | null = null;
+
+  if (config.agents.parallel_coding) {
+    try {
+      const expectedPath = worktreePath(project.path, ticketId);
+      try {
+        await access(expectedPath);
+        agentCwd = expectedPath;
+        agentWorktreePath = expectedPath;
+      } catch {
+        agentCwd = await createWorktree(project.path, ticketId, logger);
+        agentWorktreePath = agentCwd;
+      }
+    } catch (err) {
+      logger.error({ err, ticketId, projectId }, 'Failed to create worktree — falling back to project path');
+    }
+  }
+
   // Create agent_runs row
   const startedAt = Date.now();
   db.prepare(
-    `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, exit_status)
-     VALUES (?, ?, ?, ?, ?, 'running')`,
-  ).run(runId, ticketId, agentTypeId, agentType.model, startedAt);
+    `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, exit_status, worktree_path)
+     VALUES (?, ?, ?, ?, ?, 'running', ?)`,
+  ).run(runId, ticketId, agentTypeId, agentType.model, startedAt, agentWorktreePath);
 
   trackRun(projectId, runId);
 
   const childLogger = logger.child({ runId, agentType: agentTypeId, project: projectId });
-  childLogger.info({ ticketId }, 'Agent run starting');
+  childLogger.info({ ticketId, cwd: agentCwd, worktree: !!agentWorktreePath }, 'Agent run starting');
 
   try {
     // Build the system prompt
@@ -132,6 +155,7 @@ export async function runAgent(
       ticketId,
       runId,
       db,
+      worktreePath: agentWorktreePath,
     });
 
     await mkdir(ARTIFACTS_DIR, { recursive: true });
@@ -155,7 +179,7 @@ export async function runAgent(
       '--output-format', 'text',
     ];
 
-    childLogger.info({ cwd: project.path }, 'Spawning claude subprocess');
+    childLogger.info({ cwd: agentCwd }, 'Spawning claude subprocess');
 
     // Build the author string for ticket CLI comments
     const authorString = `agent:${agentTypeId}:${runId}`;
@@ -208,7 +232,7 @@ export async function runAgent(
     // Spawn the subprocess
     const result = await new Promise<AgentRunResult>((resolvePromise) => {
       const child: ChildProcess = spawn(config.claude_cli.binary_path, claudeArgs, {
-        cwd: project.path,
+        cwd: agentCwd,
         stdio: ['ignore', 'pipe', 'pipe'],
         env: subprocessEnv,
       });

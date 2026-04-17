@@ -21,6 +21,9 @@ logs/
 # Runtime data directory (if project ever runs its own install inside the source tree)
 .tasks/
 
+# Git worktrees (created by parallel coding agents)
+.worktrees/
+
 # Env files
 .env
 .env.local

@@ -8,6 +8,7 @@ interface PromptBuildInput {
   ticketId: string;
   runId: string;
   db: Database;
+  worktreePath?: string | null;
 }
 
 interface AgentTypeRow {
@@ -51,7 +52,7 @@ interface ProjectTypeColumnRow {
  * same inputs (no randomness, no timestamps in the prompt itself).
  */
 export async function buildPrompt(input: PromptBuildInput): Promise<string> {
-  const { agentTypeId, projectId, ticketId, runId, db } = input;
+  const { agentTypeId, projectId, ticketId, runId, db, worktreePath } = input;
 
   // Load the three DB rows we need
   const agentType = db
@@ -105,9 +106,13 @@ export async function buildPrompt(input: PromptBuildInput): Promise<string> {
   sections.push('');
 
   // 3. Project context
+  const effectiveCwd = worktreePath ?? project.path;
   sections.push('## Project Context');
-  sections.push(`Your current working directory is: ${project.path}`);
+  sections.push(`Your current working directory is: ${effectiveCwd}`);
   sections.push('Read CLAUDE.md first if it exists — it is the authoritative guide to this project.');
+  if (worktreePath) {
+    sections.push(`You are working in a git worktree on branch \`ticket/${ticketId}\`. The main repo is at ${project.path}.`);
+  }
   sections.push('');
 
   // 4. Ticket context
