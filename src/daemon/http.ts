@@ -98,7 +98,7 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
       }
       try {
         const url = new URL(origin);
-        if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
+        if (url.hostname === 'localhost' || url.hostname === '127.0.0.1' || url.hostname === '[::1]') {
           cb(null, true);
           return;
         }

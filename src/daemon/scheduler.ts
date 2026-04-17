@@ -117,11 +117,6 @@ export class Scheduler {
     );
   }
 
-  /**
-   * Schedule a newly created project. Called by the POST /api/projects
-   * route so the project gets a timer immediately — without this, the
-   * project sits idle until the next daemon restart or manual wake.
-   */
   scheduleNewProject(projectId: string): void {
     const row = this.db
       .prepare('SELECT next_check_at FROM project_heartbeats WHERE project_id = ?')

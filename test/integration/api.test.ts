@@ -1049,3 +1049,41 @@ describe('Scheduler integration via project creation', () => {
     expect(state!.isScheduled).toBe(true);
   });
 });
+
+describe('CORS origin validation', () => {
+  it('allows localhost origin', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { origin: 'http://localhost:5757' },
+    });
+    expect(res.headers['access-control-allow-origin']).toBe('http://localhost:5757');
+  });
+
+  it('allows 127.0.0.1 origin', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { origin: 'http://127.0.0.1:5757' },
+    });
+    expect(res.headers['access-control-allow-origin']).toBe('http://127.0.0.1:5757');
+  });
+
+  it('allows [::1] origin', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { origin: 'http://[::1]:5757' },
+    });
+    expect(res.headers['access-control-allow-origin']).toBe('http://[::1]:5757');
+  });
+
+  it('rejects external origin', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/health',
+      headers: { origin: 'http://evil.com' },
+    });
+    expect(res.headers['access-control-allow-origin']).toBeUndefined();
+  });
+});
