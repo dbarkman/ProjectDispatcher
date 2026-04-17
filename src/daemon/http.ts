@@ -78,6 +78,11 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
   app.addHook('onSend', async (_request, reply) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'same-origin');
+    reply.header('X-Frame-Options', 'DENY');
+    reply.header(
+      'Content-Security-Policy',
+      "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; base-uri 'self'",
+    );
   });
 
   // Multipart support for file uploads (attachments).
