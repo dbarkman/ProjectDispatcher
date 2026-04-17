@@ -10,6 +10,7 @@ import { seedBuiltins } from '../../src/db/seed.js';
 import { loadConfig } from '../../src/config.js';
 import { createLogger } from '../../src/logger.js';
 import { createHttpServer } from '../../src/daemon/http.js';
+import { Scheduler } from '../../src/daemon/scheduler.js';
 import type { Database } from 'better-sqlite3';
 import { mkdtempSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir, homedir } from 'node:os';
@@ -1002,5 +1003,49 @@ describe('Vendor static assets', () => {
     expect(res.body).toContain('/static/vendor/htmx-json-enc-2.0.3.js');
     expect(res.body).not.toContain('cdn.tailwindcss.com');
     expect(res.body).not.toContain('unpkg.com');
+  });
+});
+
+describe('Scheduler integration via project creation', () => {
+  let schedDb: Database;
+  let schedApp: FastifyInstance;
+  let scheduler: Scheduler;
+  let schedTmpDir: string;
+
+  beforeEach(async () => {
+    schedDb = openDatabase(':memory:');
+    runMigrations(schedDb);
+    seedBuiltins(schedDb);
+
+    schedTmpDir = mkdtempSync(join(tmpdir(), 'pd-sched-api-'));
+    const config = loadConfig(join(schedTmpDir, 'nonexistent.json'));
+    const logger = createLogger(join(schedTmpDir, 'logs'));
+
+    scheduler = new Scheduler(schedDb, config, logger);
+    scheduler.start();
+
+    schedApp = await createHttpServer({ config, db: schedDb, logger, scheduler });
+    await schedApp.ready();
+  });
+
+  afterEach(async () => {
+    scheduler.stop();
+    await schedApp.close();
+    schedDb.close();
+    rmSync(schedTmpDir, { recursive: true, force: true });
+  });
+
+  it('POST /api/projects schedules new project in scheduler', async () => {
+    const res = await schedApp.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'AutoSched', path: '/auto-sched', project_type_id: 'software-dev' },
+    });
+    expect(res.statusCode).toBe(201);
+    const project = res.json();
+
+    const state = scheduler.getProjectState(project.id);
+    expect(state).not.toBeNull();
+    expect(state!.isScheduled).toBe(true);
   });
 });

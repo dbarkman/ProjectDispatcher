@@ -118,6 +118,7 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
       return project;
     })();
 
+    scheduler?.scheduleNewProject(result.id);
     return reply.status(201).send(getProject(db, result.id));
   });
 

@@ -107,7 +107,31 @@ export class Scheduler {
       this.scheduleNext(hb.project_id, hb.next_check_at);
     }
 
-    this.logger.info({ projectCount: projects.length }, 'Scheduler started');
+    const activeCount = (this.db
+      .prepare("SELECT COUNT(*) AS c FROM projects WHERE status = 'active'")
+      .get() as { c: number }).c;
+
+    this.logger.info(
+      { projectCount: projects.length, activeProjects: activeCount, repairedOrphans: orphans.length },
+      'Scheduler started',
+    );
+  }
+
+  /**
+   * Schedule a newly created project. Called by the POST /api/projects
+   * route so the project gets a timer immediately — without this, the
+   * project sits idle until the next daemon restart or manual wake.
+   */
+  scheduleNewProject(projectId: string): void {
+    const row = this.db
+      .prepare('SELECT next_check_at FROM project_heartbeats WHERE project_id = ?')
+      .get(projectId) as { next_check_at: number } | undefined;
+    if (!row) {
+      this.logger.warn({ projectId }, 'No heartbeat row for new project — cannot schedule');
+      return;
+    }
+    this.scheduleNext(projectId, row.next_check_at);
+    this.logger.info({ projectId }, 'New project scheduled');
   }
 
   /**
