@@ -1,0 +1,223 @@
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <!-- Metadata -->
+  <div class="card">
+    <h3 class="text-sm font-semibold text-gray-400 mb-4">Configuration</h3>
+    <form id="pt-config-form" onsubmit="return ptSaveConfig(event)">
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">ID</label>
+          <input value="{{projectType.id}}" disabled
+            class="w-full bg-navy-950 border border-navy-700 rounded px-3 py-2 text-sm text-gray-500 font-mono">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Name</label>
+          <input name="name" value="{{projectType.name}}"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Description</label>
+          <input name="description" value="{{projectType.description}}"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+        </div>
+      </div>
+      <button type="submit"
+        class="mt-4 px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">
+        Save Configuration
+      </button>
+    </form>
+  </div>
+
+  <!-- Columns editor -->
+  <div class="card">
+    <h3 class="text-sm font-semibold text-gray-400 mb-4">Workflow Columns</h3>
+    <div id="pt-columns-list" class="space-y-2 mb-4"></div>
+    <button type="button" onclick="ptAddColumn()"
+      class="px-3 py-1.5 bg-navy-700 hover:bg-navy-600 text-gray-300 text-xs rounded transition-colors">
+      + Add Column
+    </button>
+    <button type="button" onclick="ptSaveColumns()"
+      class="ml-2 px-4 py-1.5 bg-accent hover:bg-accent-hover text-white text-xs rounded-lg transition-colors">
+      Save Columns
+    </button>
+  </div>
+</div>
+
+{{#unless projectType.is_builtin}}
+<div class="mt-6">
+  <button type="button" onclick="ptDelete()"
+    class="px-4 py-2 bg-red-900/50 hover:bg-red-800/50 text-red-400 text-sm rounded-lg border border-red-800 transition-colors">
+    Delete Project Type
+  </button>
+</div>
+{{/unless}}
+
+<script>
+  var PT_ID = "{{projectType.id}}";
+  var PT_BUILTIN = {{projectType.is_builtin}};
+  var ptColumns = {{{columnsJson}}};
+  var ptAgentTypes = {{{agentTypesJson}}};
+
+  function ptRenderColumns() {
+    var list = document.getElementById('pt-columns-list');
+    list.innerHTML = '';
+    ptColumns.sort(function(a, b) { return a.order - b.order; });
+    for (var i = 0; i < ptColumns.length; i++) {
+      var col = ptColumns[i];
+      var isFixed = col.column_id === 'human' || col.column_id === 'done';
+      var row = document.createElement('div');
+      row.className = 'flex items-center gap-2 bg-navy-900 border border-navy-700 rounded px-3 py-2';
+
+      var orderSpan = document.createElement('span');
+      orderSpan.className = 'text-xs text-gray-500 w-6 text-center shrink-0';
+      orderSpan.textContent = String(i);
+      row.appendChild(orderSpan);
+
+      var colIdInput = document.createElement('input');
+      colIdInput.className = 'bg-navy-950 border border-navy-700 rounded px-2 py-1 text-xs text-gray-300 font-mono w-32';
+      colIdInput.value = col.column_id;
+      colIdInput.disabled = isFixed || PT_BUILTIN;
+      colIdInput.setAttribute('data-field', 'column_id');
+      colIdInput.setAttribute('data-idx', String(i));
+      colIdInput.onchange = function() { ptColumns[+this.getAttribute('data-idx')].column_id = this.value; };
+      row.appendChild(colIdInput);
+
+      var nameInput = document.createElement('input');
+      nameInput.className = 'bg-navy-900 border border-navy-700 rounded px-2 py-1 text-sm text-gray-200 flex-1';
+      nameInput.value = col.name;
+      nameInput.disabled = PT_BUILTIN;
+      nameInput.setAttribute('data-field', 'name');
+      nameInput.setAttribute('data-idx', String(i));
+      nameInput.onchange = function() { ptColumns[+this.getAttribute('data-idx')].name = this.value; };
+      row.appendChild(nameInput);
+
+      var agentSelect = document.createElement('select');
+      agentSelect.className = 'bg-navy-900 border border-navy-700 rounded px-2 py-1 text-xs text-gray-300 w-40';
+      agentSelect.disabled = PT_BUILTIN;
+      agentSelect.setAttribute('data-idx', String(i));
+      var noneOpt = document.createElement('option');
+      noneOpt.value = '';
+      noneOpt.textContent = '(none)';
+      agentSelect.appendChild(noneOpt);
+      for (var j = 0; j < ptAgentTypes.length; j++) {
+        var opt = document.createElement('option');
+        opt.value = ptAgentTypes[j].id;
+        opt.textContent = ptAgentTypes[j].name;
+        if (col.agent_type_id === ptAgentTypes[j].id) opt.selected = true;
+        agentSelect.appendChild(opt);
+      }
+      agentSelect.onchange = function() {
+        ptColumns[+this.getAttribute('data-idx')].agent_type_id = this.value || null;
+      };
+      row.appendChild(agentSelect);
+
+      if (!isFixed && !PT_BUILTIN) {
+        var moveUpBtn = document.createElement('button');
+        moveUpBtn.type = 'button';
+        moveUpBtn.className = 'text-gray-500 hover:text-gray-300 text-xs px-1';
+        moveUpBtn.textContent = '\u25B2';
+        moveUpBtn.setAttribute('data-idx', String(i));
+        moveUpBtn.onclick = function() { ptMoveColumn(+this.getAttribute('data-idx'), -1); };
+        row.appendChild(moveUpBtn);
+
+        var moveDownBtn = document.createElement('button');
+        moveDownBtn.type = 'button';
+        moveDownBtn.className = 'text-gray-500 hover:text-gray-300 text-xs px-1';
+        moveDownBtn.textContent = '\u25BC';
+        moveDownBtn.setAttribute('data-idx', String(i));
+        moveDownBtn.onclick = function() { ptMoveColumn(+this.getAttribute('data-idx'), 1); };
+        row.appendChild(moveDownBtn);
+
+        var removeBtn = document.createElement('button');
+        removeBtn.type = 'button';
+        removeBtn.className = 'text-red-500 hover:text-red-400 text-xs px-1';
+        removeBtn.textContent = '\u2715';
+        removeBtn.setAttribute('data-idx', String(i));
+        removeBtn.onclick = function() { ptRemoveColumn(+this.getAttribute('data-idx')); };
+        row.appendChild(removeBtn);
+      }
+
+      list.appendChild(row);
+    }
+  }
+
+  function ptMoveColumn(idx, dir) {
+    var target = idx + dir;
+    if (target < 0 || target >= ptColumns.length) return;
+    var tmp = ptColumns[idx];
+    ptColumns[idx] = ptColumns[target];
+    ptColumns[target] = tmp;
+    ptReorder();
+    ptRenderColumns();
+  }
+
+  function ptRemoveColumn(idx) {
+    ptColumns.splice(idx, 1);
+    ptReorder();
+    ptRenderColumns();
+  }
+
+  function ptAddColumn() {
+    ptColumns.push({
+      column_id: '',
+      name: '',
+      agent_type_id: null,
+      order: ptColumns.length
+    });
+    ptRenderColumns();
+  }
+
+  function ptReorder() {
+    for (var i = 0; i < ptColumns.length; i++) {
+      ptColumns[i].order = i;
+    }
+  }
+
+  function ptSaveConfig(event) {
+    event.preventDefault();
+    var form = document.getElementById('pt-config-form');
+    var body = {
+      name: form.querySelector('[name=name]').value,
+      description: form.querySelector('[name=description]').value
+    };
+    fetch('/api/project-types/' + PT_ID, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    }).then(function(res) {
+      if (res.ok) window.location.reload();
+      else res.json().then(function(d) { alert(d.error || 'Save failed'); });
+    });
+    return false;
+  }
+
+  function ptSaveColumns() {
+    ptReorder();
+    var cleaned = ptColumns.map(function(c) {
+      return {
+        column_id: c.column_id,
+        name: c.name,
+        agent_type_id: c.agent_type_id || null,
+        order: c.order
+      };
+    });
+    fetch('/api/project-types/' + PT_ID, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ columns: cleaned })
+    }).then(function(res) {
+      if (res.ok) window.location.reload();
+      else res.json().then(function(d) { alert(d.error || 'Save failed'); });
+    });
+  }
+
+  function ptDelete() {
+    if (!confirm('Delete this project type? This cannot be undone.')) return;
+    fetch('/api/project-types/' + PT_ID, { method: 'DELETE' })
+      .then(function(res) {
+        if (res.ok) window.location = '/ui/project-types';
+        else res.json().then(function(d) { alert(d.error || 'Delete failed'); });
+      });
+  }
+
+  ptRenderColumns();
+</script>

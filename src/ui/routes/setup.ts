@@ -18,6 +18,7 @@ import { inboxRoutes } from './inbox.js';
 import { projectUiRoutes } from './projects.js';
 import { ticketUiRoutes } from './tickets.js';
 import { agentTypeUiRoutes } from './agent-types.js';
+import { projectTypeUiRoutes } from './project-types.js';
 import { settingsUiRoutes } from './settings.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -55,6 +56,9 @@ export async function setupUi(app: FastifyInstance, db: Database, config: Config
   const agentEditFormSrc = await readFile(join(templatesDir, 'agent-edit-form.hbs'), 'utf8');
   Handlebars.registerPartial('agentEditForm', agentEditFormSrc);
 
+  const projectTypeEditFormSrc = await readFile(join(templatesDir, 'project-type-edit-form.hbs'), 'utf8');
+  Handlebars.registerPartial('projectTypeEditForm', projectTypeEditFormSrc);
+
   const boardColumnsSrc = await readFile(join(templatesDir, 'board-columns.hbs'), 'utf8');
   Handlebars.registerPartial('boardColumns', boardColumnsSrc);
   const boardColumnsTemplate = Handlebars.compile(boardColumnsSrc);
@@ -81,5 +85,6 @@ export async function setupUi(app: FastifyInstance, db: Database, config: Config
   await projectUiRoutes(app, db, config, { boardColumnsTemplate });
   await ticketUiRoutes(app, db, { commentThreadTemplate });
   await agentTypeUiRoutes(app, db);
+  await projectTypeUiRoutes(app, db);
   await settingsUiRoutes(app, config);
 }
