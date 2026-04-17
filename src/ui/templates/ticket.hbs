@@ -168,8 +168,10 @@
 {{/if}}
 
 <!-- Transcript modal (Gap fix #5) -->
-<div id="transcript-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-  <div class="bg-navy-900 border border-navy-700 rounded-xl w-[90vw] max-w-4xl max-h-[80vh] flex flex-col">
+<div id="transcript-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+  onclick="this.classList.add('hidden')">
+  <div class="bg-navy-900 border border-navy-700 rounded-xl w-[90vw] max-w-4xl max-h-[80vh] flex flex-col"
+    onclick="event.stopPropagation()">
     <div class="flex items-center justify-between px-4 py-3 border-b border-navy-700">
       <h3 class="text-sm font-semibold text-gray-300">Agent Transcript</h3>
       <button onclick="document.getElementById('transcript-modal').classList.add('hidden')"

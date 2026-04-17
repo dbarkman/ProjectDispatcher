@@ -18,8 +18,10 @@
 </div>
 
 <!-- Register prompt modal (hidden until a discovered folder is clicked) -->
-<div id="register-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-  <div class="bg-navy-800 border border-navy-700 rounded-xl w-96 p-6">
+<div id="register-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/60"
+  onclick="this.classList.add('hidden')">
+  <div class="bg-navy-800 border border-navy-700 rounded-xl w-96 p-6"
+    onclick="event.stopPropagation()">
     <h3 class="text-lg font-semibold text-gray-200 mb-1">Register Project</h3>
     <p id="register-folder-name" class="text-sm text-gray-400 mb-4"></p>
     <form hx-post="/api/projects" hx-ext="json-enc" hx-swap="none"
