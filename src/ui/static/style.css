@@ -1,6 +1,6 @@
 /* Custom styles on top of Tailwind CDN.
    Keep minimal — Tailwind handles most styling via classes.
-   Color palette: neutral grays (Linode-inspired), teal-green accent. */
+   Color palette: warm steel-grays (Linode-inspired), teal-green accent. */
 
 /* Navigation links */
 .nav-link {
@@ -11,13 +11,13 @@
   padding-left: 1rem;
   border-radius: 0.375rem;
   font-size: 0.875rem;
-  color: #a3a3a3; /* neutral-400 */
+  color: #a2a7b0; /* navy-200 */
   transition: all 0.15s;
   text-decoration: none;
 }
 
 .nav-link:hover {
-  background-color: rgba(90, 90, 90, 0.3);
+  background-color: rgba(90, 96, 106, 0.3);
   color: #e5e5e5;
 }
 
@@ -37,14 +37,14 @@
 
 /* Cards */
 .card {
-  background-color: #2e2e2e; /* navy-800 */
-  border: 1px solid #383838; /* navy-700 */
+  background-color: #2b3038; /* navy-800 */
+  border: 1px solid #353a42; /* navy-700 */
   border-radius: 0.5rem;
   padding: 1rem;
 }
 
 .card:hover {
-  border-color: #4a4a4a; /* navy-500 */
+  border-color: #494e57; /* navy-500 */
 }
 
 /* Priority dots */
@@ -57,7 +57,7 @@
 .priority-urgent { background-color: #ef4444; }
 .priority-high { background-color: #f59e0b; }
 .priority-normal { background-color: #6b7280; }
-.priority-low { background-color: #4a4a4a; }
+.priority-low { background-color: #494e57; }
 
 /* Status dots — ticket health on the board */
 .status-dot {
@@ -81,14 +81,14 @@
 }
 .badge-active { background-color: rgba(2, 177, 89, 0.2); color: #02b159; }
 .badge-missing { background-color: rgba(239, 68, 68, 0.2); color: #ef4444; }
-.badge-dormant { background-color: rgba(107, 114, 128, 0.2); color: #a3a3a3; }
-.badge-archived { background-color: rgba(107, 114, 128, 0.1); color: #737373; }
+.badge-dormant { background-color: rgba(107, 114, 128, 0.2); color: #a2a7b0; }
+.badge-archived { background-color: rgba(107, 114, 128, 0.1); color: #727880; }
 
 /* Select elements: remove native appearance so padding is respected (macOS ignores py on native selects) */
 select {
   appearance: none;
   -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23a3a3a3'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%23a2a7b0'%3E%3Cpath fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z' clip-rule='evenodd'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 0.75rem center;
   background-size: 0.75rem;
@@ -98,8 +98,8 @@ select {
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #4a4a4a; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #5c5c5c; }
+::-webkit-scrollbar-thumb { background: #494e57; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #5a606a; }
 
 /* htmx loading indicator */
 .htmx-indicator {

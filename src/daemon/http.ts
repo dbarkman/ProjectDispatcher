@@ -75,9 +75,26 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
   });
 
   // Security headers applied to every response.
+  // CSP uses 'unsafe-inline' for scripts/styles because htmx templates embed
+  // inline <script> blocks and Tailwind generates runtime inline styles.
+  const csp = [
+    "default-src 'self'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "connect-src 'self'",
+    "font-src 'self'",
+    "object-src 'none'",
+    "frame-ancestors 'none'",
+    "form-action 'self'",
+    "base-uri 'self'",
+  ].join('; ');
+
   app.addHook('onSend', async (_request, reply) => {
     reply.header('X-Content-Type-Options', 'nosniff');
     reply.header('Referrer-Policy', 'same-origin');
+    reply.header('Content-Security-Policy', csp);
+    reply.header('X-Frame-Options', 'DENY');
   });
 
   // Multipart support for file uploads (attachments).
