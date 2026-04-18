@@ -23,7 +23,7 @@ import type { Database } from 'better-sqlite3';
 import type { Logger } from 'pino';
 import { randomUUID } from 'node:crypto';
 import { cleanupOrphanedWorktrees } from './worktree.js';
-import { isProcessAlive } from './agent-runner.js';
+import { isProcessAlive } from './pidfile.js';
 
 export interface RecoveryResult {
   orphanedRuns: number;

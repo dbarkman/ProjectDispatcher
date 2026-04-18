@@ -9,7 +9,6 @@ import { createTicket, moveTicket } from '../../src/db/queries/tickets.js';
 import {
   initActiveRuns,
   reapDetachedRuns,
-  isProcessAlive,
   getActiveCount,
   getGlobalActiveCount,
 } from '../../src/daemon/agent-runner.js';
@@ -22,17 +21,6 @@ beforeEach(() => {
   db = openDatabase(':memory:');
   runMigrations(db);
   seedBuiltins(db);
-});
-
-describe('isProcessAlive', () => {
-  it('returns true for the current process', () => {
-    expect(isProcessAlive(process.pid)).toBe(true);
-  });
-
-  it('returns false for a non-existent PID', () => {
-    // PID 99999999 almost certainly doesn't exist
-    expect(isProcessAlive(99999999)).toBe(false);
-  });
 });
 
 describe('initActiveRuns', () => {

@@ -11,6 +11,7 @@ import { DEFAULT_DB_PATH, DEFAULT_TASKS_DIR } from '../db/index.js';
 import { addComment } from '../db/queries/tickets.js';
 import { buildPrompt } from '../services/prompt-builder.js';
 import { createWorktree } from './worktree.js';
+import { isProcessAlive } from './pidfile.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -84,17 +85,6 @@ export function initActiveRuns(db: Database): void {
   }
 }
 
-export function isProcessAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err: unknown) {
-    if (err && typeof err === 'object' && 'code' in err && err.code === 'EPERM') {
-      return true;
-    }
-    return false;
-  }
-}
 
 /**
  * Finalize a run that has ended — update DB, release ticket claim on failure,
