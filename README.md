@@ -2,7 +2,7 @@
 
 Async ticket-based orchestration between a human and AI coding agents. Local, single-user, runs on your own machine. One daemon across every project.
 
-Project Dispatcher is the missing middle tier: you file a ticket ("add payment collection to the invoice flow"), it lands in a Kanban board, and agents pick it up on a heartbeat. A coding agent does the work on its own branch. A code reviewer reviews it. A security reviewer reviews it. A merge agent merges it. You sign off on what actually needs human judgment; the rest flows through while you sleep.
+Project Dispatcher is the missing middle tier: you file a ticket ("add payment collection to the invoice flow"), it lands in a Kanban board, and agents pick it up on a heartbeat. A coding agent does the work on its own branch. A code reviewer reviews it. A security reviewer reviews it. When the security reviewer approves, the daemon merges the branch onto main. You sign off on what actually needs human judgment; the rest flows through while you sleep.
 
 It is the tool you want between "Claude can do this for me" and "I have to babysit every session." You file the work, you walk away, you come back to an inbox of completed or blocked tickets across every project you own.
 
@@ -44,7 +44,7 @@ Four moving parts:
 - **Agents** — `claude -p` subprocesses. Each runs detached, writes its transcript directly to a file, survives daemon restarts. A reaper finalizes any agent that died while the daemon was down.
 - **Ticket CLI (`ticket.cjs`)** — how agents read and mutate tickets. A small Node script with parameterized SQLite queries. No MCP server, no HTTP transport between agent and daemon. Simpler and more reliable than a protocol server; one failure mode instead of four.
 
-Agents work in **git worktrees** when `parallel_coding` is on (Settings → Agents → Parallel coding). Each coding-agent ticket gets its own branch `ticket/<id>` in its own worktree directory. The merge agent merges cleanly onto main when the ticket hits Done; merge conflicts route the ticket back to Human with a specific error.
+Agents work in **git worktrees** when `parallel_coding` is on (Settings → Agents → Parallel coding). Each coding-agent ticket gets its own branch `ticket/<id>` in its own worktree directory. When the ticket hits Done, the daemon merges the branch cleanly onto main via a direct `git merge`; merge conflicts route the ticket back to Human with a specific error.
 
 A **circuit breaker** (configurable, default 3 runs) auto-routes a ticket to Human if an agent runs that many times on the same ticket without moving it to a new column. This stops run-away token burn when an agent is stuck and does not know it.
 
@@ -52,20 +52,21 @@ Config lives at `~/Development/.tasks/config.json`. Most fields hot-reload — e
 
 ## Agents and models
 
-Ten built-in agent types ship:
+Nine built-in agent types ship:
 
 | Agent | Role | Model |
 | --- | --- | --- |
 | Coding Agent | Does the work on a ticket branch | Claude Opus |
 | Code Reviewer | Reviews the coding agent's diff | Claude Opus |
-| Security Reviewer | Reviews for security issues | Claude Opus |
+| Security Reviewer | Reviews for security issues, approves for merge | Claude Opus |
 | Sysadmin | VPS / host ops | Claude Sonnet |
 | Security Auditor | Deeper security audits (hosts, configs) | Claude Sonnet |
 | Writer | Drafts written content | Claude Sonnet |
 | Editor | Edits the writer's drafts | Claude Sonnet |
 | Deployer | Packages and deploys | Claude Sonnet |
 | Researcher | Web research + summaries | Claude Haiku |
-| Merge Agent | Lands ticket branches on main | Claude Haiku |
+
+Merging the ticket branch onto main is not done by an agent — when a ticket reaches Done, the daemon runs a direct `git merge` via its worktree helper, and a merge conflict routes the ticket back to Human with a specific error.
 
 Each agent type is a markdown system prompt at `~/Development/.tasks/prompts/<agent>.md`. Edit it in place. User edits are preserved across upgrades — the installer only copies a default when the file does not already exist.
 
@@ -122,7 +123,7 @@ Everything lives under `~/Development/.tasks/`:
 ├── config.json             # daemon config
 ├── prompts/                # agent system prompts (markdown, editable)
 ├── artifacts/runs/         # agent transcripts
-├── logs/                   # daemon logs (rotated, retention configurable)
+├── logs/                   # daemon logs (age-based cleanup, retention configurable)
 ├── backups/                # rolling DB snapshots
 └── daemon.pid              # PID file
 ```

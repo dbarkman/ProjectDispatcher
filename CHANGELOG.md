@@ -14,15 +14,17 @@ First public release. The daemon is feature-complete against the V1 scope in
 
 - **Async ticket-based orchestration.** Per-project Kanban boards. Tickets flow
   between columns (Human → Coding Agent → Code Reviewer → Security Reviewer →
-  Merge Agent → Done) with append-only threaded comments.
+  Done) with append-only threaded comments. The security reviewer approves the
+  ticket for merge; the daemon merges the branch directly.
 - **Per-project heartbeat scheduler** with exponential backoff. Resets to 5 min
   when work is assigned or found; backs off to a 24h ceiling when idle.
 - **Detached agent subprocesses.** `claude -p` runs detached with transcripts
   written directly to file descriptors, so agents survive daemon restarts. A
   reaper finalizes orphaned runs.
 - **Parallel coding via git worktrees.** Each coding-agent ticket gets its own
-  branch `ticket/<id>` in its own worktree. The merge agent lands clean merges
-  on main; conflicts route back to Human with a specific error.
+  branch `ticket/<id>` in its own worktree. The daemon lands clean merges on
+  main directly when the ticket hits Done; conflicts route back to Human with
+  a specific error.
 - **Concurrency caps** enforced in-process (default 3 per project, 10 global),
   hot-reloadable from the Settings UI. Race-free reservation pattern so
   concurrent heartbeats cannot exceed the cap.
@@ -32,8 +34,8 @@ First public release. The daemon is feature-complete against the V1 scope in
   circuit breaker, retention, parallel coding, discovery ignore list) take
   effect on the next heartbeat with no daemon restart. Port and claude binary
   path still require a restart and are labeled as such.
-- **Ten built-in agent types**: coding agent, code reviewer, security reviewer,
-  sysadmin, security auditor, writer, editor, deployer, researcher, merge agent.
+- **Nine built-in agent types**: coding agent, code reviewer, security reviewer,
+  sysadmin, security auditor, writer, editor, deployer, researcher.
 - **Five built-in project types**: software-dev, content, vps-maintenance,
   research, personal.
 - **Ticket CLI (`ticket.cjs`)** — agents interact with tickets via a small Node
