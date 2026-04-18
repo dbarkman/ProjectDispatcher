@@ -16,7 +16,8 @@ export async function configRoutes(
 
   // PATCH /api/config — update the config file, validate, reload
   app.patch('/api/config', async (request, reply) => {
-    const patch = z.record(z.string(), z.unknown()).parse(request.body);
+    const raw = z.record(z.string(), z.unknown()).parse(request.body);
+    const patch = expandDotKeys(raw);
 
     let current: Record<string, unknown>;
     try {
@@ -73,6 +74,68 @@ function changesRestartRequiredField(
     }
   }
   return false;
+}
+
+const DANGEROUS_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+
+/**
+ * htmx json-enc sends flat dotted keys ("agents.max_concurrent_per_project": "3").
+ * Expand them into nested objects and coerce string values to native types
+ * so they pass Zod validation. Already-nested objects pass through unchanged.
+ */
+function expandDotKeys(
+  flat: Record<string, unknown>,
+): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const key of Object.keys(flat)) {
+    if (DANGEROUS_KEYS.has(key)) continue;
+    const value = flat[key];
+    const dotIndex = key.indexOf('.');
+    if (dotIndex !== -1) {
+      const section = key.substring(0, dotIndex);
+      const field = key.substring(dotIndex + 1);
+      if (DANGEROUS_KEYS.has(section) || DANGEROUS_KEYS.has(field)) continue;
+      const existing = result[section];
+      if (
+        typeof existing === 'object' &&
+        existing !== null &&
+        !Array.isArray(existing)
+      ) {
+        (existing as Record<string, unknown>)[field] = coerceValue(value);
+      } else {
+        result[section] = { [field]: coerceValue(value) };
+      }
+    } else if (
+      typeof value === 'object' &&
+      value !== null &&
+      !Array.isArray(value)
+    ) {
+      const existing = result[key];
+      if (
+        typeof existing === 'object' &&
+        existing !== null &&
+        !Array.isArray(existing)
+      ) {
+        result[key] = {
+          ...(existing as Record<string, unknown>),
+          ...(value as Record<string, unknown>),
+        };
+      } else {
+        result[key] = value;
+      }
+    } else {
+      result[key] = coerceValue(value);
+    }
+  }
+  return result;
+}
+
+function coerceValue(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  if (value === 'true') return true;
+  if (value === 'false') return false;
+  if (value !== '' && !isNaN(Number(value))) return Number(value);
+  return value;
 }
 
 /**

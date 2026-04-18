@@ -210,4 +210,47 @@ describe('PATCH /api/config restart_required', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().heartbeat.base_interval_seconds).toBe(120);
   });
+
+  it('expands dotted keys from json-enc form submissions', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/config',
+      payload: {
+        'agents.max_concurrent_per_project': '5',
+        'agents.parallel_coding': 'true',
+        'heartbeat.base_interval_seconds': '120',
+      },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.agents.max_concurrent_per_project).toBe(5);
+    expect(body.agents.parallel_coding).toBe(true);
+    expect(body.heartbeat.base_interval_seconds).toBe(120);
+  });
+
+  it('coerces string "false" to boolean false for parallel_coding', async () => {
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/config',
+      payload: { 'agents.parallel_coding': 'true' },
+    });
+    expect(configRef.current.agents.parallel_coding).toBe(true);
+
+    await app.inject({
+      method: 'PATCH',
+      url: '/api/config',
+      payload: { 'agents.parallel_coding': 'false' },
+    });
+    expect(configRef.current.agents.parallel_coding).toBe(false);
+  });
+
+  it('still accepts nested objects (API-style payloads)', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/config',
+      payload: { agents: { parallel_coding: true } },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().agents.parallel_coding).toBe(true);
+  });
 });

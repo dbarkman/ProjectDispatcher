@@ -86,6 +86,16 @@
           <input name="agents.default_timeout_minutes" type="number" value="{{config.agents.default_timeout_minutes}}"
             class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
         </div>
+        <div class="flex items-start gap-3 pt-1">
+          <input type="hidden" name="agents.parallel_coding" id="parallel-coding-value"
+            value="{{#if config.agents.parallel_coding}}true{{else}}false{{/if}}">
+          <input type="checkbox" id="parallel-coding-checkbox" {{#if config.agents.parallel_coding}}checked{{/if}}
+            class="mt-0.5 h-4 w-4 rounded border-navy-700 bg-navy-900 text-accent focus:ring-accent focus:ring-offset-0">
+          <div>
+            <label for="parallel-coding-checkbox" class="block text-xs text-gray-200 cursor-pointer">Parallel coding (git worktrees)</label>
+            <p class="text-xs text-gray-500 mt-0.5">Each coding-agent ticket gets its own git worktree + branch. Enables multiple tickets to be worked in parallel on the same project.</p>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -143,6 +153,14 @@
   }
   if (authSelect) {
     authSelect.addEventListener('change', updateAiFields);
+  }
+
+  var parallelCheckbox = document.getElementById('parallel-coding-checkbox');
+  var parallelValue = document.getElementById('parallel-coding-value');
+  if (parallelCheckbox) {
+    parallelCheckbox.addEventListener('change', function() {
+      parallelValue.value = parallelCheckbox.checked ? 'true' : 'false';
+    });
   }
 
   var testBtn = document.getElementById('settings-test-conn');
