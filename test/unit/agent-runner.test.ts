@@ -340,11 +340,10 @@ describe('runAgent concurrency reservation', () => {
       ),
     ).rejects.toThrow('Concurrency limit reached');
 
-    // Release A's worktree so the first promise can proceed / settle. Make
-    // the rest of runAgent fail on spawn (mocked claude binary path → enoent)
-    // so the test does not hang on a real child process. We settle the
-    // promise by letting it fail naturally — the slot is then released by
-    // either the catch path or the child error handler.
+    // Release A's worktree so the first promise can settle. We swallow
+    // whatever outcome it reaches (most likely a spawn failure on the real
+    // claude binary path under the test environment) — this test only
+    // asserts the cap-check behavior for the second call.
     releaseFirstWorktree();
     await firstPromise.catch(() => undefined);
   });

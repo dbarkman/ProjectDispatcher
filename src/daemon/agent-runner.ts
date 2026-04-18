@@ -239,6 +239,17 @@ export async function runAgent(
     .get(projectId) as { path: string } | undefined;
   if (!project) throw new Error(`Project not found: ${projectId}`);
 
+  const childLogger = logger.child({ runId, agentType: agentTypeId, project: projectId });
+
+  // Refuse to spawn if AI provider not configured. Intentionally before
+  // the cap check + reservation so a misconfigured daemon does not even
+  // touch the concurrency accounting or create a zombie agent_runs row
+  // that would then need a CAS-guarded cleanup dance.
+  if (!config.ai.auth_method) {
+    childLogger.error('AI provider not configured — refusing to spawn agent');
+    return { runId, pid: null, spawned: false };
+  }
+
   if (getActiveCount(projectId) >= config.agents.max_concurrent_per_project) {
     throw new Error(
       `Concurrency limit reached for project ${projectId}: ${getActiveCount(projectId)}/${config.agents.max_concurrent_per_project}`,
@@ -258,172 +269,173 @@ export async function runAgent(
   // catch below; after spawn, the child lifecycle handler owns cleanup
   // (close/error → finalizeRun → untrackRun).
   trackRun(projectId, runId);
-
-  const childLogger = logger.child({ runId, agentType: agentTypeId, project: projectId });
-
-  try {
-  let agentCwd = project.path;
-  let agentWorktreePath: string | null = null;
-
-  if (config.agents.parallel_coding) {
-    agentCwd = await createWorktree(project.path, ticketId, logger);
-    agentWorktreePath = agentCwd;
-  }
-
-  const startedAt = Date.now();
-  db.prepare(
-    `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, exit_status, worktree_path)
-     VALUES (?, ?, ?, ?, ?, 'running', ?)`,
-  ).run(runId, ticketId, agentTypeId, agentType.model, startedAt, agentWorktreePath);
-
-  childLogger.info({ ticketId, cwd: agentCwd, worktree: !!agentWorktreePath }, 'Agent run starting');
-
-  // Refuse to spawn if AI provider not configured
-  if (!config.ai.auth_method) {
-    finalizeRun(db, runId, ticketId, agentTypeId, projectId, 'crashed',
-      'AI provider not configured. Visit the setup wizard to configure authentication before agents can run.',
-      childLogger);
-
-    childLogger.error('AI provider not configured — refusing to spawn agent');
-    return { runId, pid: null, spawned: false };
-  }
-
-  const prompt = await buildPrompt({
-    agentTypeId,
-    projectId,
-    ticketId,
-    runId,
-    db,
-    worktreePath: agentWorktreePath,
-  });
-
-  await mkdir(ARTIFACTS_DIR, { recursive: true });
-
-  const transcriptPath = join(ARTIFACTS_DIR, `${runId}.log`);
-
-  // Store transcript path now — the close handler or reaper will read it
-  db.prepare('UPDATE agent_runs SET transcript_path = ? WHERE id = ?').run(transcriptPath, runId);
-
-  const tools = allowedToolsSchema.parse(JSON.parse(agentType.allowed_tools));
-
-  const claudeArgs = [
-    '-p', prompt,
-    '--model', agentType.model,
-    '--permission-mode', agentType.permission_mode,
-    '--allowedTools', tools.join(','),
-    '--output-format', 'text',
-  ];
-
-  childLogger.info({ cwd: agentCwd }, 'Spawning claude subprocess (detached)');
-
-  const authorString = `agent:${agentTypeId}:${runId}`;
-
-  const subprocessEnv: Record<string, string | undefined> = {
-    ...process.env,
-    NODE_ENV: 'production',
-    DISPATCH_DB_PATH: DEFAULT_DB_PATH,
-    DISPATCH_TICKET_ID: ticketId,
-    DISPATCH_PROJECT_ID: projectId,
-    DISPATCH_AGENT_TYPE: agentTypeId,
-    DISPATCH_RUN_ID: runId,
-    DISPATCH_AUTHOR: authorString,
-    DISPATCH_PORT: String(config.ui.port),
-    DISPATCH_TICKET_BIN: TICKET_CLI_PATH,
-  };
-
-  if (config.ai.auth_method === 'api_key' && config.ai.api_key) {
-    subprocessEnv.ANTHROPIC_API_KEY = config.ai.api_key;
-  } else if (config.ai.auth_method === 'custom') {
-    if (config.ai.api_key) subprocessEnv.ANTHROPIC_API_KEY = config.ai.api_key;
-    if (config.ai.base_url) subprocessEnv.ANTHROPIC_BASE_URL = config.ai.base_url;
-  }
-
-  // Open transcript file as fd — child inherits and writes directly.
-  // Survives daemon restart (no pipe dependency on parent process).
-  const fileHandle = await fsOpen(transcriptPath, 'a');
+  let insertedRow = false;
 
   try {
-    const child = spawn(config.claude_cli.binary_path, claudeArgs, {
-      cwd: agentCwd,
-      detached: true,
-      stdio: ['ignore', fileHandle.fd, fileHandle.fd],
-      env: subprocessEnv,
-    });
+    let agentCwd = project.path;
+    let agentWorktreePath: string | null = null;
 
-    const pid = child.pid ?? null;
-
-    if (pid !== null) {
-      db.prepare('UPDATE agent_runs SET pid = ? WHERE id = ?').run(pid, runId);
+    if (config.agents.parallel_coding) {
+      agentCwd = await createWorktree(project.path, ticketId, logger);
+      agentWorktreePath = agentCwd;
     }
 
-    // Timeout enforcement — same-lifecycle only. Cross-restart handled by reaper.
-    let exited = false;
-    let killTimer: ReturnType<typeof setTimeout> | null = null;
-    const timeoutMs = agentType.timeout_minutes * 60 * 1000;
+    const startedAt = Date.now();
+    db.prepare(
+      `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, exit_status, worktree_path)
+       VALUES (?, ?, ?, ?, ?, 'running', ?)`,
+    ).run(runId, ticketId, agentTypeId, agentType.model, startedAt, agentWorktreePath);
+    insertedRow = true;
 
-    const timer = setTimeout(() => {
-      if (exited) return;
-      childLogger.warn({ timeoutMs }, 'Agent timed out — sending SIGTERM');
-      child.kill('SIGTERM');
-      killTimer = setTimeout(() => {
-        if (!exited) {
-          childLogger.warn('Agent did not exit after SIGTERM — sending SIGKILL');
-          child.kill('SIGKILL');
-        }
-      }, 10_000);
-    }, timeoutMs);
+    childLogger.info({ ticketId, cwd: agentCwd, worktree: !!agentWorktreePath }, 'Agent run starting');
 
-    let exitCode: number | null = null;
-    let exitSignal: string | null = null;
-
-    child.on('exit', (code, signal) => {
-      exited = true;
-      clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      exitCode = code;
-      exitSignal = signal;
+    const prompt = await buildPrompt({
+      agentTypeId,
+      projectId,
+      ticketId,
+      runId,
+      db,
+      worktreePath: agentWorktreePath,
     });
 
-    child.on('close', () => {
-      let exitStatus: 'success' | 'timeout' | 'crashed';
-      let errorMessage: string | null = null;
+    await mkdir(ARTIFACTS_DIR, { recursive: true });
 
-      if (exitSignal === 'SIGTERM' || exitSignal === 'SIGKILL') {
-        exitStatus = 'timeout';
-        errorMessage = `Timed out after ${agentType.timeout_minutes} minutes`;
-      } else if (exitCode !== 0) {
-        exitStatus = 'crashed';
-        errorMessage = `Exited with code ${exitCode ?? 'unknown'}`;
-      } else {
-        exitStatus = 'success';
+    const transcriptPath = join(ARTIFACTS_DIR, `${runId}.log`);
+
+    // Store transcript path now — the close handler or reaper will read it
+    db.prepare('UPDATE agent_runs SET transcript_path = ? WHERE id = ?').run(transcriptPath, runId);
+
+    const tools = allowedToolsSchema.parse(JSON.parse(agentType.allowed_tools));
+
+    const claudeArgs = [
+      '-p', prompt,
+      '--model', agentType.model,
+      '--permission-mode', agentType.permission_mode,
+      '--allowedTools', tools.join(','),
+      '--output-format', 'text',
+    ];
+
+    childLogger.info({ cwd: agentCwd }, 'Spawning claude subprocess (detached)');
+
+    const authorString = `agent:${agentTypeId}:${runId}`;
+
+    const subprocessEnv: Record<string, string | undefined> = {
+      ...process.env,
+      NODE_ENV: 'production',
+      DISPATCH_DB_PATH: DEFAULT_DB_PATH,
+      DISPATCH_TICKET_ID: ticketId,
+      DISPATCH_PROJECT_ID: projectId,
+      DISPATCH_AGENT_TYPE: agentTypeId,
+      DISPATCH_RUN_ID: runId,
+      DISPATCH_AUTHOR: authorString,
+      DISPATCH_PORT: String(config.ui.port),
+      DISPATCH_TICKET_BIN: TICKET_CLI_PATH,
+    };
+
+    if (config.ai.auth_method === 'api_key' && config.ai.api_key) {
+      subprocessEnv.ANTHROPIC_API_KEY = config.ai.api_key;
+    } else if (config.ai.auth_method === 'custom') {
+      if (config.ai.api_key) subprocessEnv.ANTHROPIC_API_KEY = config.ai.api_key;
+      if (config.ai.base_url) subprocessEnv.ANTHROPIC_BASE_URL = config.ai.base_url;
+    }
+
+    // Open transcript file as fd — child inherits and writes directly.
+    // Survives daemon restart (no pipe dependency on parent process).
+    const fileHandle = await fsOpen(transcriptPath, 'a');
+
+    try {
+      const child = spawn(config.claude_cli.binary_path, claudeArgs, {
+        cwd: agentCwd,
+        detached: true,
+        stdio: ['ignore', fileHandle.fd, fileHandle.fd],
+        env: subprocessEnv,
+      });
+
+      const pid = child.pid ?? null;
+
+      if (pid !== null) {
+        db.prepare('UPDATE agent_runs SET pid = ? WHERE id = ?').run(pid, runId);
       }
 
-      finalizeRun(db, runId, ticketId, agentTypeId, projectId, exitStatus, errorMessage, childLogger);
-    });
+      // Timeout enforcement — same-lifecycle only. Cross-restart handled by reaper.
+      let exited = false;
+      let killTimer: ReturnType<typeof setTimeout> | null = null;
+      const timeoutMs = agentType.timeout_minutes * 60 * 1000;
 
-    child.on('error', (err) => {
-      exited = true;
-      clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      finalizeRun(db, runId, ticketId, agentTypeId, projectId, 'crashed', `Spawn error: ${err.message}`, childLogger);
-    });
+      const timer = setTimeout(() => {
+        if (exited) return;
+        childLogger.warn({ timeoutMs }, 'Agent timed out — sending SIGTERM');
+        child.kill('SIGTERM');
+        killTimer = setTimeout(() => {
+          if (!exited) {
+            childLogger.warn('Agent did not exit after SIGTERM — sending SIGKILL');
+            child.kill('SIGKILL');
+          }
+        }, 10_000);
+      }, timeoutMs);
 
-    // Detach: daemon can exit without waiting for this child.
-    child.unref();
+      let exitCode: number | null = null;
+      let exitSignal: string | null = null;
 
-    childLogger.info({ pid }, 'Agent subprocess spawned (detached)');
+      child.on('exit', (code, signal) => {
+        exited = true;
+        clearTimeout(timer);
+        if (killTimer) clearTimeout(killTimer);
+        exitCode = code;
+        exitSignal = signal;
+      });
 
-    return { runId, pid, spawned: true };
-  } finally {
-    // Close parent's copy of the fd — child has inherited its own copy.
-    await fileHandle.close();
-  }
+      child.on('close', () => {
+        let exitStatus: 'success' | 'timeout' | 'crashed';
+        let errorMessage: string | null = null;
+
+        if (exitSignal === 'SIGTERM' || exitSignal === 'SIGKILL') {
+          exitStatus = 'timeout';
+          errorMessage = `Timed out after ${agentType.timeout_minutes} minutes`;
+        } else if (exitCode !== 0) {
+          exitStatus = 'crashed';
+          errorMessage = `Exited with code ${exitCode ?? 'unknown'}`;
+        } else {
+          exitStatus = 'success';
+        }
+
+        finalizeRun(db, runId, ticketId, agentTypeId, projectId, exitStatus, errorMessage, childLogger);
+      });
+
+      child.on('error', (err) => {
+        exited = true;
+        clearTimeout(timer);
+        if (killTimer) clearTimeout(killTimer);
+        finalizeRun(db, runId, ticketId, agentTypeId, projectId, 'crashed', `Spawn error: ${err.message}`, childLogger);
+      });
+
+      // Detach: daemon can exit without waiting for this child.
+      child.unref();
+
+      childLogger.info({ pid }, 'Agent subprocess spawned (detached)');
+
+      return { runId, pid, spawned: true };
+    } finally {
+      // Close parent's copy of the fd — child has inherited its own copy.
+      await fileHandle.close();
+    }
   } catch (err) {
     // Pre-spawn failure: release the reserved slot before propagating. After
     // a successful spawn, this catch is unreachable (handlers are attached
     // and the function has already returned); cleanup in that path is owned
     // by the child lifecycle via finalizeRun.
-    untrackRun(projectId, runId);
+    //
+    // If the INSERT already executed, the agent_runs row is left in
+    // exit_status='running' with no PID. The reaper (`reapDetachedRuns`)
+    // filters on `pid IS NOT NULL`, so it would never clean this row up.
+    // Close it here so the ticket claim is released and the row is not
+    // orphaned forever.
+    const errorMessage = err instanceof Error ? err.message : String(err);
+    if (insertedRow) {
+      finalizeRun(db, runId, ticketId, agentTypeId, projectId, 'crashed', errorMessage, childLogger);
+    } else {
+      untrackRun(projectId, runId);
+    }
     throw err;
   }
 }
