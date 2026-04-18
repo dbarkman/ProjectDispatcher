@@ -1,15 +1,21 @@
 {
   "name": "projectdispatcher",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Async ticket-based orchestration between humans and AI agents across multiple projects.",
   "license": "MIT",
   "author": "David Barkman",
   "type": "module",
-  "private": true,
+  "private": false,
   "bin": {
-    "dispatch": "./dist/cli/index.js"
+    "dispatch": "./dist/cli/index.js",
+    "projectdispatcher": "./dist/install.js"
   },
   "main": "./dist/index.js",
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "dev": "tsx watch src/daemon/index.ts",
     "build": "tsc && node scripts/copy-assets.mjs",
