@@ -17,7 +17,7 @@ export function registerUninstallCommands(program: Command): void {
     .command('uninstall')
     .description('Uninstall Project Dispatcher (stop service, remove files)')
     .option('--yes', 'Skip confirmation prompt')
-    .option('--delete-data', 'Also delete the data directory (~/.tasks)')
+    .option('--delete-data', 'Also delete the data directory (~/Development/.tasks)')
     .action(async (opts: { yes?: boolean; deleteData?: boolean }) => {
       if (!opts.yes) {
         const ok = await confirm('Uninstall Project Dispatcher? This will stop the daemon and remove the service. [y/N] ');
