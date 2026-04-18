@@ -244,6 +244,18 @@ describe('PATCH /api/config restart_required', () => {
     expect(configRef.current.agents.parallel_coding).toBe(false);
   });
 
+  it('persists retention.transcript_days via dotted key and hot-reloads', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/config',
+      payload: { 'retention.transcript_days': '14' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().retention.transcript_days).toBe(14);
+    expect(res.json().restart_required).toBe(false);
+    expect(configRef.current.retention.transcript_days).toBe(14);
+  });
+
   it('still accepts nested objects (API-style payloads)', async () => {
     const res = await app.inject({
       method: 'PATCH',
