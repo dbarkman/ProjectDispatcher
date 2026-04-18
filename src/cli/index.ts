@@ -27,7 +27,7 @@ const program = new Command();
 program
   .name('dispatch')
   .description('Project Dispatcher — async ticket-based orchestration for AI agents')
-  .version('0.0.1');
+  .version('0.1.0');
 
 registerProjectCommands(program);
 registerTicketCommands(program);
