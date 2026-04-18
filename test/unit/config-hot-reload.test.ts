@@ -253,4 +253,17 @@ describe('PATCH /api/config restart_required', () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().agents.parallel_coding).toBe(true);
   });
+
+  it('persists retention.backup_count via dotted key and hot-reloads without restart', async () => {
+    const res = await app.inject({
+      method: 'PATCH',
+      url: '/api/config',
+      payload: { 'retention.backup_count': '7' },
+    });
+    expect(res.statusCode).toBe(200);
+    const body = res.json();
+    expect(body.retention.backup_count).toBe(7);
+    expect(body.restart_required).toBe(false);
+    expect(configRef.current.retention.backup_count).toBe(7);
+  });
 });
