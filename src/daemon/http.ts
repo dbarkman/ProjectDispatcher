@@ -178,6 +178,7 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
 
     return {
       status: 'ok',
+      pid: process.pid,
       uptime_seconds: Math.floor(process.uptime()),
       database: 'connected',
       port: configRef.current.ui.port,

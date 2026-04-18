@@ -54,7 +54,7 @@ export async function apiRequest<T = unknown>(
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes('ECONNREFUSED')) {
-      throw new Error('Daemon is not running. Start it with: npm run dev');
+      throw new Error('Daemon is not running. Start it with: dispatch daemon start');
     }
     throw new Error(`Failed to connect to daemon: ${msg}`);
   }

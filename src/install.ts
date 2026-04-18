@@ -11,9 +11,10 @@
 //   4. Copy default prompt files
 //   5. Write default config.json
 //   6. Install platform service (LaunchAgent / systemd / Windows)
-//   7. Wait for daemon to become healthy
-//   8. Run auto-discovery
-//   9. Print success + next steps
+//   7. Wait for daemon to become healthy (with PID verification)
+//   8. Auto-discover projects
+//   9. Open browser (unless --no-browser or DISPATCH_NO_BROWSER=1)
+//  10. Print success + next steps
 
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile, copyFile, readdir } from 'node:fs/promises';
@@ -21,6 +22,7 @@ import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { platform as osPlatform } from 'node:os';
 import chalk from 'chalk';
 import { DEFAULT_TASKS_DIR, DEFAULT_DB_PATH } from './db/index.js';
 import { openDatabase } from './db/index.js';
@@ -28,6 +30,7 @@ import { runMigrations } from './db/migrate.js';
 import { seedBuiltins } from './db/seed.js';
 import { configSchema } from './config.schema.js';
 import { detectPlatform } from './platform/detect.js';
+import { parseInstallerFlags, manualStartHint, getServicePid } from './install-utils.js';
 
 const execFileAsync = promisify(execFile);
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -37,6 +40,9 @@ const PROMPTS_DEST = join(DEFAULT_TASKS_DIR, 'prompts');
 const CONFIG_PATH = join(DEFAULT_TASKS_DIR, 'config.json');
 const LOGS_DIR = join(DEFAULT_TASKS_DIR, 'logs');
 const ARTIFACTS_DIR = join(DEFAULT_TASKS_DIR, 'artifacts', 'runs');
+const DEFAULT_PORT = 5757;
+
+const flags = parseInstallerFlags(process.argv);
 
 async function main(): Promise<void> {
   console.log(chalk.bold('\n  Project Dispatcher Installer\n'));
@@ -138,19 +144,33 @@ async function main(): Promise<void> {
       console.log(chalk.yellow(`  Unsupported platform (${platform}) — daemon must be started manually`));
     }
   } catch (err) {
-    console.log(chalk.yellow(`  Service install failed: ${err instanceof Error ? err.message : String(err)}`));
-    console.log(chalk.dim('  Start the daemon manually with: npm run dev'));
+    console.error(chalk.red(`  Service install failed: ${err instanceof Error ? err.message : String(err)}`));
+    console.log(chalk.dim(`  Start the daemon manually with: ${manualStartHint(platform)}`));
+    process.exit(1);
   }
 
-  // 7. Wait for daemon health (Gap fix #15)
+  // 7. Wait for daemon health with PID verification
   console.log(chalk.cyan('\nWaiting for daemon to become healthy...'));
 
   let healthy = false;
+  let sawPidMismatch = false;
+
   for (let attempt = 0; attempt < 10; attempt++) {
     await new Promise((r) => setTimeout(r, 2000));
     try {
-      const res = await fetch(`http://127.0.0.1:${5757}/api/health`);
+      const res = await fetch(`http://127.0.0.1:${DEFAULT_PORT}/api/health`);
       if (res.ok) {
+        const body = (await res.json()) as { pid?: number };
+        const servicePid = await getServicePid(platform);
+        if (
+          servicePid !== null &&
+          body.pid !== undefined &&
+          body.pid !== servicePid
+        ) {
+          sawPidMismatch = true;
+          process.stdout.write(chalk.dim('x'));
+          continue;
+        }
         healthy = true;
         console.log(chalk.green('  Daemon is healthy!'));
         break;
@@ -159,46 +179,86 @@ async function main(): Promise<void> {
       process.stdout.write(chalk.dim('.'));
     }
   }
+
   if (!healthy) {
+    if (sawPidMismatch) {
+      console.error(
+        chalk.red('\n  Health check responded, but from a different process (PID mismatch).'),
+      );
+      console.error(
+        chalk.red(`  Another process is occupying port ${DEFAULT_PORT}.`),
+      );
+      console.error(
+        chalk.dim(`  Stop the other process, then run: ${manualStartHint(platform)}`),
+      );
+      process.exit(1);
+    }
     console.log(chalk.yellow('\n  Daemon did not become healthy within 20 seconds.'));
-    console.log(chalk.dim('  Start manually with: npm run dev'));
+    console.log(chalk.dim(`  Start manually with: ${manualStartHint(platform)}`));
   }
 
-  // 8. Open browser (Gap fix #16)
+  // 8. Auto-discover projects
   if (healthy) {
-    console.log(chalk.cyan('\nOpening the UI in your browser...'));
-    const url = `http://127.0.0.1:${5757}`;
+    console.log(chalk.cyan('\nDiscovering projects...'));
     try {
-      const os = (await import('node:os')).platform();
-      const { execFile: execF } = await import('node:child_process');
-      const { promisify: prom } = await import('node:util');
-      const execFA = prom(execF);
-      if (os === 'darwin') await execFA('open', [url]);
-      else if (os === 'linux') await execFA('xdg-open', [url]);
-      else if (os === 'win32') await execFA('cmd', ['/c', 'start', url]);
+      const res = await fetch(`http://127.0.0.1:${DEFAULT_PORT}/api/discovery`);
+      if (res.ok) {
+        const data = (await res.json()) as {
+          discovered: Array<{ path: string; name: string }>;
+          registered: number;
+        };
+        if (data.discovered.length > 0) {
+          for (const p of data.discovered) {
+            console.log(chalk.dim(`  ${p.name} (${p.path})`));
+          }
+          console.log(
+            chalk.dim(
+              `\n  ${data.discovered.length} unregistered project(s) found. Register with:`,
+            ),
+          );
+          console.log(chalk.dim('    dispatch projects register <path> --type software-dev'));
+        } else {
+          console.log(chalk.dim('  No new projects found'));
+        }
+        if (data.registered > 0) {
+          console.log(chalk.green(`  ${data.registered} project(s) already registered`));
+        }
+      }
+    } catch {
+      console.log(chalk.dim('  Discovery skipped (could not reach daemon)'));
+    }
+  }
+
+  // 9. Open browser (unless suppressed)
+  if (healthy && !flags.noBrowser) {
+    console.log(chalk.cyan('\nOpening the UI in your browser...'));
+    const url = `http://127.0.0.1:${DEFAULT_PORT}`;
+    try {
+      const os = osPlatform();
+      if (os === 'darwin') await execFileAsync('open', [url]);
+      else if (os === 'linux') await execFileAsync('xdg-open', [url]);
+      else if (os === 'win32') await execFileAsync('cmd', ['/c', 'start', url]);
       console.log(chalk.green(`  Opened ${url}`));
     } catch {
       console.log(`  Open in your browser: ${chalk.cyan(url)}`);
     }
   }
 
-  // 9. Success
+  // 10. Success
   console.log(chalk.bold.green('\n  Installation complete!\n'));
   console.log('  Next steps:');
   if (!healthy) {
-    console.log(`    1. Start the daemon:  ${chalk.cyan('npm run dev')}`);
-    console.log(`    2. Open the UI:       ${chalk.cyan('http://127.0.0.1:5757')}`);
+    console.log(`    1. Start the daemon:  ${chalk.cyan(manualStartHint(platform))}`);
+    console.log(`    2. Open the UI:       ${chalk.cyan(`http://127.0.0.1:${DEFAULT_PORT}`)}`);
   }
-  console.log(`    ${healthy ? '1' : '3'}. Discover projects: ${chalk.cyan('dispatch projects discover')}`);
-  console.log(`    ${healthy ? '2' : '4'}. Register a project: ${chalk.cyan('dispatch projects register <path> --type software-dev')}`);
-  console.log(`    ${healthy ? '3' : '5'}. Create a ticket:   ${chalk.cyan('dispatch ticket new')}`);
+  console.log(`    ${healthy ? '1' : '3'}. Register a project: ${chalk.cyan('dispatch projects register <path> --type software-dev')}`);
+  console.log(`    ${healthy ? '2' : '4'}. Create a ticket:   ${chalk.cyan('dispatch ticket new')}`);
   console.log('');
 }
 
 main().catch(async (err) => {
   console.error(chalk.red(`\nInstallation failed: ${err instanceof Error ? err.message : String(err)}`));
 
-  // Rollback: attempt to remove the service and .tasks/ if we created them (Gap fix #17)
   console.error(chalk.dim('Attempting rollback...'));
   try {
     const platform = detectPlatform();

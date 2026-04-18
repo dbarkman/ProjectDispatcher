@@ -12,6 +12,7 @@ const execFileAsync = promisify(execFile);
 
 interface HealthResponse {
   status: string;
+  pid: number;
   uptime_seconds: number;
   database: string;
   port: number;
@@ -38,7 +39,7 @@ export function registerDaemonCommands(program: Command): void {
         const msg = err instanceof Error ? err.message : String(err);
         if (msg.includes('not running') || msg.includes('ECONNREFUSED')) {
           console.log(chalk.red('Daemon is not running.'));
-          console.log(chalk.dim('Start it with: npm run dev'));
+          console.log(chalk.dim('Start it with: dispatch daemon start'));
         } else {
           throw err;
         }
@@ -58,7 +59,7 @@ export function registerDaemonCommands(program: Command): void {
           await execFileAsync('systemctl', ['--user', 'start', 'projectdispatcher']);
         } else {
           console.log(chalk.yellow('Service management not supported on this platform.'));
-          console.log(chalk.dim('Start manually with: npm run dev'));
+          console.log(chalk.dim('Start manually with: node dist/daemon/index.js'));
           return;
         }
         console.log(chalk.green('Daemon started.'));

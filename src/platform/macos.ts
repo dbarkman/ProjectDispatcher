@@ -65,6 +65,15 @@ export async function installService(config: ServiceConfig): Promise<void> {
   await writeFile(PLIST_PATH, buildPlist(config), 'utf8');
 
   const uid = process.getuid?.()?.toString() ?? '501';
+
+  // Bootout first so re-runs are idempotent. Fails with exit 3
+  // ("No such process") on first install — that's fine.
+  try {
+    await execFileAsync('launchctl', ['bootout', `gui/${uid}/${PLIST_NAME}`]);
+  } catch {
+    // Expected on first install
+  }
+
   await execFileAsync('launchctl', ['bootstrap', `gui/${uid}`, PLIST_PATH]);
 }
 
