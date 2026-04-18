@@ -86,6 +86,12 @@
           <input name="agents.default_timeout_minutes" type="number" value="{{config.agents.default_timeout_minutes}}"
             class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
         </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Circuit breaker — max runs per ticket</label>
+          <input name="agents.circuit_breaker_max_runs" type="number" min="1" value="{{config.agents.circuit_breaker_max_runs}}"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+          <p class="text-xs text-gray-500 mt-1">If an agent runs this many times on a ticket without moving it to a new column, the ticket is auto-routed to Human. Prevents infinite retry loops.</p>
+        </div>
         <div class="flex items-start gap-3 pt-1">
           <input type="hidden" name="agents.parallel_coding" id="parallel-coding-value"
             value="{{#if config.agents.parallel_coding}}true{{else}}false{{/if}}">
