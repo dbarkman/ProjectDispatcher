@@ -250,6 +250,18 @@ export async function runAgent(
     );
   }
 
+  // Reserve the concurrency slot synchronously, BEFORE any await. Without
+  // this, two concurrent handleHeartbeat runs (e.g. two projects' timers
+  // firing on the same tick) could both pass the cap checks above before
+  // either reached trackRun, because createWorktree is async and yields
+  // the event loop. Slot is released on pre-spawn failure via the outer
+  // catch below; after spawn, the child lifecycle handler owns cleanup
+  // (close/error → finalizeRun → untrackRun).
+  trackRun(projectId, runId);
+
+  const childLogger = logger.child({ runId, agentType: agentTypeId, project: projectId });
+
+  try {
   let agentCwd = project.path;
   let agentWorktreePath: string | null = null;
 
@@ -264,9 +276,6 @@ export async function runAgent(
      VALUES (?, ?, ?, ?, ?, 'running', ?)`,
   ).run(runId, ticketId, agentTypeId, agentType.model, startedAt, agentWorktreePath);
 
-  trackRun(projectId, runId);
-
-  const childLogger = logger.child({ runId, agentType: agentTypeId, project: projectId });
   childLogger.info({ ticketId, cwd: agentCwd, worktree: !!agentWorktreePath }, 'Agent run starting');
 
   // Refuse to spawn if AI provider not configured
@@ -408,5 +417,13 @@ export async function runAgent(
   } finally {
     // Close parent's copy of the fd — child has inherited its own copy.
     await fileHandle.close();
+  }
+  } catch (err) {
+    // Pre-spawn failure: release the reserved slot before propagating. After
+    // a successful spawn, this catch is unreachable (handlers are attached
+    // and the function has already returned); cleanup in that path is owned
+    // by the child lifecycle via finalizeRun.
+    untrackRun(projectId, runId);
+    throw err;
   }
 }

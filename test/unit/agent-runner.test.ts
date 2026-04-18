@@ -9,10 +9,22 @@ import { createTicket, moveTicket } from '../../src/db/queries/tickets.js';
 import {
   initActiveRuns,
   reapDetachedRuns,
+  runAgent,
   getActiveCount,
   getGlobalActiveCount,
 } from '../../src/daemon/agent-runner.js';
+import { configSchema } from '../../src/config.schema.js';
 import { randomUUID } from 'node:crypto';
+
+vi.mock('../../src/daemon/worktree.js', () => ({
+  createWorktree: vi.fn(),
+  mergeAndCleanup: vi.fn(),
+  removeWorktree: vi.fn(),
+  worktreePath: vi.fn(),
+  worktreeBranch: vi.fn(),
+}));
+
+import { createWorktree } from '../../src/daemon/worktree.js';
 
 const silentLogger = pino({ level: 'silent' });
 let db: Database;
@@ -238,5 +250,102 @@ describe('reapDetachedRuns', () => {
     expect(runAfter.error_message).toContain('Timed out');
 
     vi.useRealTimers();
+  });
+});
+
+describe('runAgent concurrency reservation', () => {
+  // Without the sync reservation, two concurrent runAgent calls (e.g. two
+  // projects' heartbeats firing on the same tick) could both pass the cap
+  // check before either reached trackRun, because createWorktree is async
+  // and yields the event loop. Regression test for that race.
+
+  const baseConfig = configSchema.parse({
+    agents: { max_concurrent_per_project: 1, max_concurrent_global: 10, parallel_coding: true },
+    ai: { auth_method: 'oauth' },
+  });
+
+  it('reserves the slot synchronously, before the first await', async () => {
+    const project = createProject(db, {
+      name: 'RaceProject',
+      path: '/tmp/race-project',
+      projectTypeId: 'software-dev',
+    });
+    const ticket = createTicket(db, { projectId: project.id, title: 'Race test' });
+    moveTicket(db, ticket.id, { toColumn: 'coding-agent' });
+
+    const codingAgentType = { id: 'coding-agent' };
+
+    // Make createWorktree throw so runAgent rejects without spawning —
+    // simulates any pre-spawn failure after the slot has been reserved.
+    vi.mocked(createWorktree).mockRejectedValueOnce(new Error('mocked worktree failure'));
+
+    // Kick off runAgent without awaiting. Everything up to the first await
+    // (createWorktree) runs synchronously in the executor, including the
+    // sync cap checks and the reservation. If the reservation is AFTER the
+    // first await (the bug), getActiveCount would still be 0 at this point.
+    const promise = runAgent(
+      { projectId: project.id, agentTypeId: codingAgentType.id, ticketId: ticket.id },
+      db,
+      baseConfig,
+      silentLogger,
+    );
+
+    expect(getActiveCount(project.id)).toBe(1);
+
+    // Propagates the mocked failure; catch path must release the slot.
+    await expect(promise).rejects.toThrow('mocked worktree failure');
+    expect(getActiveCount(project.id)).toBe(0);
+  });
+
+  it('rejects a second concurrent call when per-project cap is already held', async () => {
+    const project = createProject(db, {
+      name: 'CapProject',
+      path: '/tmp/cap-project',
+      projectTypeId: 'software-dev',
+    });
+    const ticketA = createTicket(db, { projectId: project.id, title: 'A' });
+    const ticketB = createTicket(db, { projectId: project.id, title: 'B' });
+    moveTicket(db, ticketA.id, { toColumn: 'coding-agent' });
+    moveTicket(db, ticketB.id, { toColumn: 'coding-agent' });
+
+    const codingAgentType = { id: 'coding-agent' };
+
+    // First call: never resolves (suspended inside createWorktree await).
+    // This is the critical window during which the race would fire in the
+    // old code — trackRun would not have happened yet, so the second call
+    // would also pass the cap check.
+    let releaseFirstWorktree: () => void = () => undefined;
+    const firstWorktreeGate = new Promise<string>((resolve) => {
+      releaseFirstWorktree = () => resolve('/tmp/cap-project/.worktrees/a');
+    });
+    vi.mocked(createWorktree).mockImplementationOnce(() => firstWorktreeGate);
+
+    const firstPromise = runAgent(
+      { projectId: project.id, agentTypeId: codingAgentType.id, ticketId: ticketA.id },
+      db,
+      baseConfig,
+      silentLogger,
+    );
+
+    // Yield once so the executor reaches the createWorktree await.
+    await Promise.resolve();
+
+    // Second call must reject immediately on the cap check — slot A is held.
+    await expect(
+      runAgent(
+        { projectId: project.id, agentTypeId: codingAgentType.id, ticketId: ticketB.id },
+        db,
+        baseConfig,
+        silentLogger,
+      ),
+    ).rejects.toThrow('Concurrency limit reached');
+
+    // Release A's worktree so the first promise can proceed / settle. Make
+    // the rest of runAgent fail on spawn (mocked claude binary path → enoent)
+    // so the test does not hang on a real child process. We settle the
+    // promise by letting it fail naturally — the slot is then released by
+    // either the catch path or the child error handler.
+    releaseFirstWorktree();
+    await firstPromise.catch(() => undefined);
   });
 });
