@@ -5,7 +5,12 @@
 // NOTE: paths are relative to cwd. This script is always invoked via
 // `npm run build`, which sets cwd to the package root — do not run it
 // from anywhere else or it will silently copy nothing.
-import { cp } from 'node:fs/promises';
+import { chmod, cp } from 'node:fs/promises';
+
+const bins = [
+  'dist/cli/index.js',
+  'dist/install.js',
+];
 
 const pairs = [
   ['src/db/migrations', 'dist/db/migrations'],
@@ -18,4 +23,9 @@ const pairs = [
 for (const [from, to] of pairs) {
   await cp(from, to, { recursive: true, force: true });
   console.log(`copied ${from} -> ${to}`);
+}
+
+for (const bin of bins) {
+  await chmod(bin, 0o755);
+  console.log(`chmod 755 ${bin}`);
 }
