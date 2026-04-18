@@ -29,7 +29,7 @@ import { openDatabase } from '../db/index.js';
 import { runMigrations } from '../db/migrate.js';
 import { seedBuiltins } from '../db/seed.js';
 import { createHttpServer, BIND_HOST } from './http.js';
-import { writePidFile, removePidFile, readPidFile } from './pidfile.js';
+import { writePidFile, removePidFile, isDaemonRunning } from './pidfile.js';
 import { startBackgroundJobs } from './jobs.js';
 import { discoverProjects } from './discovery.js';
 import { startWatcher } from './watcher.js';
@@ -50,15 +50,13 @@ async function main(): Promise<void> {
   logger.info('Project Dispatcher starting');
 
   // 2b. PID file lock — refuse to start if another daemon is alive
-  const existingPid = readPidFile();
+  const { running, pid: existingPid } = isDaemonRunning();
   if (existingPid !== null) {
-    try {
-      process.kill(existingPid, 0);
+    if (running) {
       logger.fatal({ pid: existingPid }, 'Daemon already running');
       process.exit(1);
-    } catch {
-      logger.warn({ stalePid: existingPid }, 'Stale PID file found — previous daemon did not shut down cleanly');
     }
+    logger.warn({ stalePid: existingPid }, 'Stale PID file found — previous daemon did not shut down cleanly');
   }
 
   // 3. Database

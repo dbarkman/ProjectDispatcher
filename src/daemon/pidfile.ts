@@ -29,14 +29,10 @@ export async function removePidFile(): Promise<void> {
   }
 }
 
-/**
- * Read the PID from the file. Returns null if the file doesn't exist
- * or the content is not a valid number.
- */
-export function readPidFile(): number | null {
+export function readPidFile(pidFilePath: string = PID_PATH): number | null {
   try {
-    if (!existsSync(PID_PATH)) return null;
-    const content = readFileSync(PID_PATH, 'utf8').trim();
+    if (!existsSync(pidFilePath)) return null;
+    const content = readFileSync(pidFilePath, 'utf8').trim();
     const pid = parseInt(content, 10);
     return Number.isFinite(pid) ? pid : null;
   } catch {
@@ -44,19 +40,19 @@ export function readPidFile(): number | null {
   }
 }
 
-/**
- * Check if the daemon process is running by reading the PID file
- * and sending signal 0 (existence check, no actual signal).
- */
-export function isDaemonRunning(): boolean {
-  const pid = readPidFile();
-  if (pid === null) return false;
+export function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
   } catch {
     return false;
   }
+}
+
+export function isDaemonRunning(pidFilePath?: string): { running: boolean; pid: number | null } {
+  const pid = readPidFile(pidFilePath);
+  if (pid === null) return { running: false, pid: null };
+  return { running: isProcessAlive(pid), pid };
 }
 
 export { PID_PATH };

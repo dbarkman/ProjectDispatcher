@@ -1,12 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { writeFileSync, unlinkSync, existsSync } from 'node:fs';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { randomUUID } from 'node:crypto';
-
-// The pidfile module uses a hardcoded path from DEFAULT_TASKS_DIR.
-// Rather than mocking the module internals, we test the logic inline
-// since the actual daemon startup check is ~10 lines of straightforward code.
+import { readPidFile, isProcessAlive, isDaemonRunning } from '../../src/daemon/pidfile.js';
 
 describe('PID file lock logic', () => {
   let pidPath: string;
@@ -19,59 +16,48 @@ describe('PID file lock logic', () => {
     try { unlinkSync(pidPath); } catch { /* may not exist */ }
   });
 
-  function readTestPid(): number | null {
-    try {
-      if (!existsSync(pidPath)) return null;
-      const content = require('node:fs').readFileSync(pidPath, 'utf8').trim();
-      const pid = parseInt(content, 10);
-      return Number.isFinite(pid) ? pid : null;
-    } catch {
-      return null;
-    }
-  }
+  describe('readPidFile', () => {
+    it('returns null when no PID file exists', () => {
+      expect(readPidFile(pidPath)).toBeNull();
+    });
 
-  function isProcessAlive(pid: number): boolean {
-    try {
-      process.kill(pid, 0);
-      return true;
-    } catch {
-      return false;
-    }
-  }
+    it('reads a valid PID from file', () => {
+      writeFileSync(pidPath, '12345', 'utf8');
+      expect(readPidFile(pidPath)).toBe(12345);
+    });
 
-  it('returns null when no PID file exists', () => {
-    expect(readTestPid()).toBeNull();
+    it('returns null for non-numeric PID content', () => {
+      writeFileSync(pidPath, 'notapid', 'utf8');
+      expect(readPidFile(pidPath)).toBeNull();
+    });
   });
 
-  it('reads a valid PID from file', () => {
-    writeFileSync(pidPath, '12345', 'utf8');
-    expect(readTestPid()).toBe(12345);
+  describe('isProcessAlive', () => {
+    it('detects current process as alive', () => {
+      expect(isProcessAlive(process.pid)).toBe(true);
+    });
+
+    it('detects dead process (high PID unlikely to exist)', () => {
+      expect(isProcessAlive(2_000_000_000)).toBe(false);
+    });
   });
 
-  it('returns null for non-numeric PID content', () => {
-    writeFileSync(pidPath, 'notapid', 'utf8');
-    expect(readTestPid()).toBeNull();
-  });
+  describe('isDaemonRunning', () => {
+    it('returns not running when no PID file', () => {
+      const result = isDaemonRunning(pidPath);
+      expect(result).toEqual({ running: false, pid: null });
+    });
 
-  it('detects current process as alive', () => {
-    expect(isProcessAlive(process.pid)).toBe(true);
-  });
+    it('returns running when PID file points to live process', () => {
+      writeFileSync(pidPath, String(process.pid), 'utf8');
+      const result = isDaemonRunning(pidPath);
+      expect(result).toEqual({ running: true, pid: process.pid });
+    });
 
-  it('detects dead process (high PID unlikely to exist)', () => {
-    expect(isProcessAlive(2_000_000_000)).toBe(false);
-  });
-
-  it('stale PID file — process dead → should allow startup', () => {
-    writeFileSync(pidPath, '2000000000', 'utf8');
-    const pid = readTestPid();
-    expect(pid).toBe(2_000_000_000);
-    expect(isProcessAlive(pid!)).toBe(false);
-  });
-
-  it('live PID file — process alive → should block startup', () => {
-    writeFileSync(pidPath, String(process.pid), 'utf8');
-    const pid = readTestPid();
-    expect(pid).toBe(process.pid);
-    expect(isProcessAlive(pid!)).toBe(true);
+    it('returns not running when PID file is stale', () => {
+      writeFileSync(pidPath, '2000000000', 'utf8');
+      const result = isDaemonRunning(pidPath);
+      expect(result).toEqual({ running: false, pid: 2_000_000_000 });
+    });
   });
 });
