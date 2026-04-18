@@ -89,7 +89,7 @@ export const configSchema = z.object({
       auth_method: z.enum(['oauth', 'api_key', 'custom']).optional(),
       api_key: z.string().optional(),
       base_url: z.string().url().optional(),
-      default_model: z.enum(CLAUDE_MODELS).default('claude-sonnet-4-6'),
+      default_model: z.enum(CLAUDE_MODELS).default('claude-opus-4-7'),
     })
     .prefault({}),
 });

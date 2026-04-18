@@ -4,8 +4,8 @@
 
 /**
  * Closed set of Claude model IDs that agents are allowed to run as.
- * Narrowing to a union catches typos (`claude-opus-4-7`, `claude-sonnet-4.6`,
- * `gpt-4`) at compile time — neither the DB CHECK layer nor the Zod layer
+ * Narrowing to a union catches typos (`claude-sonnet-4.6`, `gpt-4`) at
+ * compile time — neither the DB CHECK layer nor the Zod layer
  * validate model strings otherwise. When Anthropic ships a new model we
  * want to support, add it here. The friction is the feature.
  *
@@ -13,6 +13,7 @@
  * (ai.default_model) reference this as the single source of truth.
  */
 export const CLAUDE_MODELS = [
+  'claude-opus-4-7',
   'claude-opus-4-6',
   'claude-sonnet-4-6',
   'claude-haiku-4-5-20251001',
