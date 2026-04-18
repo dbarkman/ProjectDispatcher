@@ -7,7 +7,7 @@ describe('AI config schema', () => {
     expect(result.ai).toBeDefined();
     expect(result.ai.provider).toBe('claude');
     expect(result.ai.auth_method).toBeUndefined();
-    expect(result.ai.default_model).toBe('claude-sonnet-4-6');
+    expect(result.ai.default_model).toBe('claude-opus-4-7');
   });
 
   it('accepts oauth auth_method', () => {
