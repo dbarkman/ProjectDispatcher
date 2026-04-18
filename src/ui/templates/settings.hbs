@@ -135,6 +135,12 @@
             class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
           <p class="text-xs text-gray-500 mt-1">Daemon logs older than this are deleted by the cleanup job.</p>
         </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">DB backup retention (count)</label>
+          <input name="retention.backup_count" type="number" min="1" value="{{config.retention.backup_count}}"
+            class="w-full bg-navy-900 border border-navy-700 rounded px-3 py-2 text-sm text-gray-200 focus:border-accent focus:outline-none">
+          <p class="text-xs text-gray-500 mt-1">Oldest backups are deleted when count exceeds this number.</p>
+        </div>
       </div>
     </div>
 
