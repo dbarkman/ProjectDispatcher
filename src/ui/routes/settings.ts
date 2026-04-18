@@ -9,6 +9,7 @@ export async function settingsUiRoutes(app: FastifyInstance, configRef: ConfigRe
       pageTitle: 'Settings',
       breadcrumbs: [{ label: 'Settings', href: '/ui/settings' }],
       config: configRef.current,
+      discoveryIgnoreText: configRef.current.discovery.ignore.join('\n'),
     });
   });
 }

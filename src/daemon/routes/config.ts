@@ -18,6 +18,7 @@ export async function configRoutes(
   app.patch('/api/config', async (request, reply) => {
     const raw = z.record(z.string(), z.unknown()).parse(request.body);
     const patch = expandDotKeys(raw);
+    coerceTextareaArrays(patch);
 
     let current: Record<string, unknown>;
     try {
@@ -128,6 +129,25 @@ function expandDotKeys(
     }
   }
   return result;
+}
+
+const TEXTAREA_ARRAY_FIELDS: ReadonlyArray<[string, string]> = [
+  ['discovery', 'ignore'],
+];
+
+export function coerceTextareaArrays(patch: Record<string, unknown>): void {
+  for (const [section, field] of TEXTAREA_ARRAY_FIELDS) {
+    const sec = patch[section];
+    if (typeof sec === 'object' && sec !== null && !Array.isArray(sec)) {
+      const obj = sec as Record<string, unknown>;
+      if (typeof obj[field] === 'string') {
+        obj[field] = (obj[field] as string)
+          .split('\n')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0);
+      }
+    }
+  }
 }
 
 function coerceValue(value: unknown): unknown {
