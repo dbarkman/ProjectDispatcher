@@ -1,7 +1,27 @@
 {
   "name": "projectdispatcher",
   "version": "0.1.0",
-  "description": "Async ticket-based orchestration between humans and AI agents across multiple projects.",
+  "description": "Async ticket-based orchestration between humans and AI coding agents. Local, single-user, Kanban workflow across every project you own.",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "agents",
+    "ai-agents",
+    "orchestration",
+    "kanban",
+    "ticket-system",
+    "cli",
+    "daemon",
+    "workflow"
+  ],
+  "homepage": "https://github.com/dbarkman/ProjectDispatcher#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dbarkman/ProjectDispatcher.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dbarkman/ProjectDispatcher/issues"
+  },
   "license": "MIT",
   "author": "David Barkman",
   "type": "module",
@@ -14,7 +34,8 @@
   "files": [
     "dist/",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "CHANGELOG.md"
   ],
   "scripts": {
     "dev": "tsx watch src/daemon/index.ts",
