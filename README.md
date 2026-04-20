@@ -2,9 +2,47 @@
 
 Async ticket-based orchestration between a human and AI coding agents. Local, single-user, runs on your own machine. One daemon across every project.
 
-Project Dispatcher is the missing middle tier: you file a ticket ("add payment collection to the invoice flow"), it lands in a Kanban board, and agents pick it up on a heartbeat. A coding agent does the work on its own branch. A code reviewer reviews it. A security reviewer reviews it. When the security reviewer approves, the daemon merges the branch onto main. You sign off on what actually needs human judgment; the rest flows through while you sleep.
+You file a ticket ("add payment collection to the invoice flow"), it lands on a Kanban board, and agents pick it up on a heartbeat. You define the columns and what happens in each — a software-dev board might run coding → review → merge; a content board might go writer → editor → done; a research project might be a single researcher column that returns a summary. You sign off on what actually needs human judgment; the rest flows through while you sleep.
 
-It is the tool you want between "Claude can do this for me" and "I have to babysit every session." You file the work, you walk away, you come back to an inbox of completed or blocked tickets across every project you own.
+The shift this enables: the developer's day moves from "what's the next line of code?" to "what should the system be doing this week?" You stop driving the session. You stop typing. You file the work, you review the output, you sign off. You operate above the code; the agents operate in it.
+
+## Why this shape
+
+Three adjacent things exist and none of them fit:
+
+- **Raw Claude Code sessions.** You are still typing, still driving, one project at a time. No persistence between sessions, no review gates, no parallel work across projects.
+- **Always-on agent loops** (paperclip-style frameworks, autopilot rigs). One blob of behavior, no signoff points, no separation between "does the work" and "reviews the work."
+- **Workflow builders** (Linear-for-agents, n8n-style visual engines). You traded the IDE for a state-machine editor. Still plumbing, still process-designing, still in the weeds of something.
+
+Project Dispatcher is the middle: structured enough to run unattended, unstructured enough to not become a second job.
+
+## The workflow is the prompts
+
+Columns are structured — Human, Coding Agent, Code Reviewer, Security Reviewer, Done. What is not structured is the transitions. There is no rule engine that says "if X then move to Y." The agent reads the ticket, reads its prompt, and makes the call.
+
+Every agent is a markdown file at `~/Development/.tasks/prompts/<agent>.md`. That prompt decides what the agent does, when it moves a ticket forward, and when it kicks the ticket back to Human.
+
+This was not designed in up front. It emerged while building Project Dispatcher — every time we reached for a workflow engine, prompts turned out to be doing the job better. The workflow is English, the runtime is English, the source of truth is English. No translation layer between "how the team works" and "what runs on the daemon."
+
+- **Process doc and runtime are the same file.** Change a rule by editing a paragraph. No schema migration, no redeploy.
+- **No impedance between the LLM and the workflow.** The thing deciding column transitions is already the thing reading English.
+- **Cheap experimentation.** Stricter reviewer? Edit the prompt. Revert? `git checkout`.
+- **One chassis, many domains.** Same column mechanics run coding, sysadmin, writing, research. Only the prompts differ.
+
+When you outgrow a prompt, you edit it. When you want a new agent type, you write a new markdown file and add a column. That is the full extent of the programming.
+
+## Authoring prompts with Claude Code
+
+Project Dispatcher's entire configuration surface is markdown and JSON. That means you can point a Claude Code session at it and have Claude Code help you build the workflow.
+
+```bash
+cd ~/Development/.tasks
+claude
+```
+
+Tell it what kind of process you want to run and what your columns should do. It can read your existing prompts, propose new ones, and help you think through how a ticket should move from column to column. This is exactly how Project Dispatcher itself is built — a human works with Claude Code on the shape of the workflow, and Project Dispatcher runs it.
+
+A built-in version of this — an in-app coach that knows your live state (running agents, recent runs, current config) — is on the roadmap. Until then, Claude Code works well as a standalone coach.
 
 ## Install
 
@@ -149,4 +187,4 @@ MIT. See [LICENSE](./LICENSE).
 
 ## Author
 
-David Barkman. Most of Project Dispatcher is written by Project Dispatcher — the coding-agent pipeline self-hosts on the same repo it is building.
+David Barkman. Most of Project Dispatcher is written with Project Dispatcher — the coding-agent pipeline self-hosts on the same repo it is building.
