@@ -5,6 +5,30 @@ All notable changes to Project Dispatcher.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] — 2026-04-21
+
+First-run UX polish from smoke-testing the 0.1.0 install on a clean machine.
+
+### Fixed
+
+- **OAuth auto-detection in setup wizard.** Step 1 was checking for
+  `~/.claude/credentials.json`, which misses valid sessions stored elsewhere.
+  Detection now runs the same `claude` subprocess probe the test-connection
+  step uses, so wizard state reflects reality. Badge shows "Checking…" while
+  the probe runs, then updates and pre-selects OAuth if the session is good.
+- **Installer next-steps output.** After `npx projectdispatcher install`, the
+  final output referenced the `dispatch` CLI — but `npx` does not install it
+  globally, so those commands failed with `command not found`. Next-steps now
+  leads with the optional `npm install -g projectdispatcher` line and frames
+  the web UI as the primary interface.
+
+### Packaging
+
+- **`npm-shrinkwrap.json` committed.** Locks the full dependency tree for
+  reproducible installs. Refresh with `npm update && npm shrinkwrap` when you
+  want to pull patches.
+- **`*.tgz` gitignored.** `npm pack` output no longer risks being committed.
+
 ## [0.1.0] — 2026-04-18
 
 First public release. The daemon is feature-complete against the V1 scope in
