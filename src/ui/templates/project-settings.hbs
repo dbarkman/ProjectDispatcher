@@ -80,16 +80,10 @@
 </div>
 
 <script>
-  // PATCH success → reload the settings page so new values render fresh
-  // (and the abbreviation preview in the helper text updates). On failure
-  // surface the server error inline rather than leaving the form looking idle.
   function handleSettingsResponse(event) {
     var status = document.getElementById('settings-status');
     if (event.detail.successful) {
-      // Reload immediately — the fresh page rendering with new values is
-      // its own confirmation. The earlier 400ms toast-then-reload raced
-      // typing if the user kept editing in the gap. (Review M-1.)
-      window.location.reload();
+      window.location.href = '/ui/projects/{{project.id}}';
       return;
     }
     var msg = 'Save failed.';
