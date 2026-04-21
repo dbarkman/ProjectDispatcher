@@ -39,3 +39,6 @@ logs/
 reviewBrief*.md
 codeReview*.md
 securityReview*.md
+
+# npm pack output
+*.tgz
