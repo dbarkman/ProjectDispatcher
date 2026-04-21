@@ -99,9 +99,9 @@ describe('project types queries', () => {
   it('gets a project type with columns', () => {
     const pt = getProjectType(db, 'software-dev');
     expect(pt).not.toBeNull();
-    expect(pt!.columns.length).toBe(5); // human, coding-agent, code-reviewer, security-reviewer, done
+    expect(pt!.columns.length).toBe(6); // human, coding-agent, code-reviewer, security-reviewer, merging, done
     expect(pt!.columns[0]!.column_id).toBe('human');
-    expect(pt!.columns[4]!.column_id).toBe('done');
+    expect(pt!.columns[5]!.column_id).toBe('done');
   });
 });
 
@@ -110,7 +110,7 @@ describe('project types queries', () => {
 describe('agent types queries', () => {
   it('lists seeded agent types', () => {
     const types = listAgentTypes(db);
-    expect(types.length).toBe(9);
+    expect(types.length).toBe(10);
   });
 
   it('gets an agent type with valid JSON tools', () => {

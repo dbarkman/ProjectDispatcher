@@ -82,6 +82,7 @@ describe('runMigrations', () => {
         '005_worktree_support.sql',
         '006_agent_pid.sql',
         '007_upgrade_opus_4_7.sql',
+        '008_merge_agent.sql',
       ];
       expect(first.applied).toEqual(expectedMigrations);
       expect(first.skipped).toEqual([]);

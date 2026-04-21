@@ -334,6 +334,9 @@ export class Scheduler {
             this.configRef.current,
             this.logger,
           );
+          // Serialize merge-agent: only one merge per project per heartbeat.
+          // Multiple concurrent merges on the same main branch race and corrupt.
+          if (col.agent_type_id === 'merge-agent') break;
         } catch (err) {
           const msg = err instanceof Error ? err.message : '';
           if (msg.includes('Concurrency limit') || msg.includes('concurrency limit')) {

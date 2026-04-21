@@ -275,7 +275,7 @@ export async function runAgent(
     let agentCwd = project.path;
     let agentWorktreePath: string | null = null;
 
-    if (config.agents.parallel_coding) {
+    if (config.agents.parallel_coding && agentTypeId !== 'merge-agent') {
       agentCwd = await createWorktree(project.path, ticketId, logger);
       agentWorktreePath = agentCwd;
     }

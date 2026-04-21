@@ -167,10 +167,21 @@ const AGENT_TYPES: AgentTypeSeed[] = [
     permissionMode: 'acceptEdits',
     timeoutMinutes: 20,
   },
+  {
+    id: 'merge-agent',
+    name: 'Merge Agent',
+    description: 'Handles git merges and simple conflict resolution for completed tickets.',
+    systemPromptPath: 'merge-agent.md',
+    model: 'claude-opus-4-7',
+    allowedTools: ['Bash', 'Read', 'Edit', 'Grep'],
+    permissionMode: 'acceptEdits',
+    timeoutMinutes: 10,
+    maxRetries: 2,
+  },
 ];
 
 const PROJECT_TYPE_COLUMNS: ProjectTypeColumnSeed[] = [
-  // software-dev: human → coding-agent → code-reviewer → security-reviewer → done
+  // software-dev: human → coding-agent → code-reviewer → security-reviewer → merging → done
   { projectTypeId: 'software-dev', columnId: 'human', name: 'Human', agentTypeId: null, order: 0 },
   {
     projectTypeId: 'software-dev',
@@ -193,9 +204,16 @@ const PROJECT_TYPE_COLUMNS: ProjectTypeColumnSeed[] = [
     agentTypeId: 'security-reviewer',
     order: 3,
   },
-  { projectTypeId: 'software-dev', columnId: 'done', name: 'Done', agentTypeId: null, order: 4 },
+  {
+    projectTypeId: 'software-dev',
+    columnId: 'merging',
+    name: 'Merging',
+    agentTypeId: 'merge-agent',
+    order: 4,
+  },
+  { projectTypeId: 'software-dev', columnId: 'done', name: 'Done', agentTypeId: null, order: 5 },
 
-  // vps-maintenance: human → sysadmin → security-auditor → done
+  // vps-maintenance: human → sysadmin → security-auditor → merging → done
   { projectTypeId: 'vps-maintenance', columnId: 'human', name: 'Human', agentTypeId: null, order: 0 },
   {
     projectTypeId: 'vps-maintenance',
@@ -211,7 +229,14 @@ const PROJECT_TYPE_COLUMNS: ProjectTypeColumnSeed[] = [
     agentTypeId: 'security-auditor',
     order: 2,
   },
-  { projectTypeId: 'vps-maintenance', columnId: 'done', name: 'Done', agentTypeId: null, order: 3 },
+  {
+    projectTypeId: 'vps-maintenance',
+    columnId: 'merging',
+    name: 'Merging',
+    agentTypeId: 'merge-agent',
+    order: 3,
+  },
+  { projectTypeId: 'vps-maintenance', columnId: 'done', name: 'Done', agentTypeId: null, order: 4 },
 
   // content: human → writer → editor → done
   { projectTypeId: 'content', columnId: 'human', name: 'Human', agentTypeId: null, order: 0 },

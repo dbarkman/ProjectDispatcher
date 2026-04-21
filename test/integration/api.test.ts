@@ -755,7 +755,7 @@ describe('Agent Types API', () => {
   it('lists seeded agent types', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/agent-types' });
     expect(res.statusCode).toBe(200);
-    expect(res.json().length).toBe(9);
+    expect(res.json().length).toBe(10);
   });
 
   it('PATCH coerces string-typed timeout_minutes from HTML form submissions', async () => {

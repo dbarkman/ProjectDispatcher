@@ -21,13 +21,13 @@ describe('seedBuiltins', () => {
       const result = seedBuiltins(db);
 
       expect(result.projectTypesInserted).toBe(5);
-      expect(result.agentTypesInserted).toBe(9);
-      expect(result.projectTypeColumnsInserted).toBe(19);
+      expect(result.agentTypesInserted).toBe(10);
+      expect(result.projectTypeColumnsInserted).toBe(21);
 
       expect(db.prepare('SELECT COUNT(*) AS c FROM project_types').get()).toEqual({ c: 5 });
-      expect(db.prepare('SELECT COUNT(*) AS c FROM agent_types').get()).toEqual({ c: 9 });
+      expect(db.prepare('SELECT COUNT(*) AS c FROM agent_types').get()).toEqual({ c: 10 });
       expect(db.prepare('SELECT COUNT(*) AS c FROM project_type_columns').get()).toEqual({
-        c: 19,
+        c: 21,
       });
     } finally {
       db.close();
@@ -45,7 +45,7 @@ describe('seedBuiltins', () => {
       ).toEqual({ c: 5 });
       expect(
         db.prepare('SELECT COUNT(*) AS c FROM agent_types WHERE is_builtin = 1').get(),
-      ).toEqual({ c: 9 });
+      ).toEqual({ c: 10 });
     } finally {
       db.close();
     }
@@ -63,9 +63,9 @@ describe('seedBuiltins', () => {
       expect(second.projectTypeColumnsInserted).toBe(0);
 
       expect(db.prepare('SELECT COUNT(*) AS c FROM project_types').get()).toEqual({ c: 5 });
-      expect(db.prepare('SELECT COUNT(*) AS c FROM agent_types').get()).toEqual({ c: 9 });
+      expect(db.prepare('SELECT COUNT(*) AS c FROM agent_types').get()).toEqual({ c: 10 });
       expect(db.prepare('SELECT COUNT(*) AS c FROM project_type_columns').get()).toEqual({
-        c: 19,
+        c: 21,
       });
     } finally {
       db.close();
@@ -139,6 +139,7 @@ describe('seedBuiltins', () => {
         'coding-agent',
         'code-reviewer',
         'security-reviewer',
+        'merging',
         'done',
       ]);
 
@@ -197,7 +198,7 @@ describe('seedBuiltins', () => {
         }[]
       ).map((r) => r.system_prompt_path);
 
-      expect(paths).toHaveLength(9);
+      expect(paths).toHaveLength(10);
 
       const resolvedPromptsDir = resolve(PROMPTS_DIR);
       for (const p of paths) {

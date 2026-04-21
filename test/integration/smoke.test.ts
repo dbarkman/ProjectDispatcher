@@ -36,7 +36,7 @@ afterEach(() => {
 });
 
 describe('Agent round-trip smoke test', () => {
-  it('full workflow: human → coding-agent → code-reviewer → security-reviewer → done', () => {
+  it('full workflow: human → coding-agent → code-reviewer → security-reviewer → merging → done', () => {
     // 1. Create a project
     const project = createProject(db, {
       name: 'Smoke Test Project',
@@ -141,7 +141,7 @@ describe('Agent round-trip smoke test', () => {
     db.prepare("UPDATE agent_runs SET exit_status = 'success', ended_at = ? WHERE id = ?")
       .run(Date.now(), reviewRunId);
 
-    // 6. Simulate security reviewer: review → move to done
+    // 6. Simulate security reviewer: review → move to merging
     const secRunId = randomUUID();
     db.prepare(
       `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, exit_status)
@@ -155,14 +155,35 @@ describe('Agent round-trip smoke test', () => {
     });
 
     moveTicket(db, ticket.id, {
-      toColumn: 'done',
+      toColumn: 'merging',
       author: `agent:security-reviewer:${secRunId}`,
     });
 
     db.prepare("UPDATE agent_runs SET exit_status = 'success', ended_at = ? WHERE id = ?")
       .run(Date.now(), secRunId);
 
-    // 7. Verify final state
+    // 7. Simulate merge agent: merge → move to done
+    const mergeRunId = randomUUID();
+    db.prepare(
+      `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, exit_status)
+       VALUES (?, ?, 'merge-agent', 'claude-opus-4-7', ?, 'running')`,
+    ).run(mergeRunId, ticket.id, Date.now());
+
+    addComment(db, ticket.id, {
+      type: 'complete',
+      author: `agent:merge-agent:${mergeRunId}`,
+      body: 'Branch merged into main. No conflicts.',
+    });
+
+    moveTicket(db, ticket.id, {
+      toColumn: 'done',
+      author: `agent:merge-agent:${mergeRunId}`,
+    });
+
+    db.prepare("UPDATE agent_runs SET exit_status = 'success', ended_at = ? WHERE id = ?")
+      .run(Date.now(), mergeRunId);
+
+    // 8. Verify final state
     const finalTicket = getTicketWithComments(db, ticket.id);
     expect(finalTicket).not.toBeNull();
     expect(finalTicket!.column).toBe('done');
@@ -170,16 +191,16 @@ describe('Agent round-trip smoke test', () => {
 
     // Full thread should have all comments in order
     const thread = finalTicket!.comments;
-    expect(thread.length).toBeGreaterThanOrEqual(7); // 3 move + 2 complete + 1 journal + 1 finding
+    expect(thread.length).toBeGreaterThanOrEqual(9); // 4 move + 3 complete + 1 journal + 1 finding
 
     // Verify agent_runs are all successful
     const runs = db
       .prepare("SELECT exit_status FROM agent_runs WHERE ticket_id = ? ORDER BY started_at")
       .all(ticket.id) as Array<{ exit_status: string }>;
-    expect(runs).toHaveLength(3);
+    expect(runs).toHaveLength(4);
     expect(runs.every((r) => r.exit_status === 'success')).toBe(true);
 
-    // Verify the complete workflow happened: human → coding → review → security → done
+    // Verify the complete workflow: human → coding → review → security → merging → done
     const moveComments = thread.filter((c) => c.type === 'move');
     const columnSequence = moveComments.map((c) => {
       const meta = JSON.parse(c.meta!) as { to_column: string };
@@ -189,6 +210,7 @@ describe('Agent round-trip smoke test', () => {
       'coding-agent',
       'code-reviewer',
       'security-reviewer',
+      'merging',
       'done',
     ]);
   });

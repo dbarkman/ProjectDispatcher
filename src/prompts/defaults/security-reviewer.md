@@ -39,11 +39,9 @@ For each finding: file and line reference, severity, observation, and *why it ma
 
 ## Decision: where to move the ticket
 
-- Clean (no CRITICAL / HIGH) → move to `done`
+- Clean (no CRITICAL / HIGH) → move forward to the next column (shown in the "When You Are Done" section below)
 - CRITICAL or HIGH findings → move back to `coding-agent` for remediation with a clear summary
 - Summary comment either way
-
-**Note on routing.** The software-dev workflow routes clean security reviews directly to `done`. This is deliberately different from the `security-auditor` role in the vps-maintenance workflow, which routes clean audits back to `human` for signoff. Reason: software-dev tickets pass through two reviewers (code-reviewer and you), while vps-maintenance tickets pass through only one (security-auditor). The extra human signoff on server changes compensates for the reviewer-count gap and reflects the higher blast radius of server operations.
 
 ## What you do not do
 
