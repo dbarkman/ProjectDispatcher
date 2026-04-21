@@ -246,13 +246,30 @@ async function main(): Promise<void> {
 
   // 10. Success
   console.log(chalk.bold.green('\n  Installation complete!\n'));
-  console.log('  Next steps:');
+  console.log('  Next steps:\n');
+
+  let step = 1;
+
   if (!healthy) {
-    console.log(`    1. Start the daemon:  ${chalk.cyan(manualStartHint(platform))}`);
-    console.log(`    2. Open the UI:       ${chalk.cyan(`http://127.0.0.1:${DEFAULT_PORT}`)}`);
+    console.log(`    ${step}. Start the daemon:\n`);
+    console.log(`         ${chalk.cyan(manualStartHint(platform))}\n`);
+    step++;
   }
-  console.log(`    ${healthy ? '1' : '3'}. Register a project: ${chalk.cyan('dispatch projects register <path> --type software-dev')}`);
-  console.log(`    ${healthy ? '2' : '4'}. Create a ticket:   ${chalk.cyan('dispatch ticket new')}`);
+
+  console.log(`    ${step}. Install the ${chalk.cyan('dispatch')} CLI globally (optional but recommended):\n`);
+  console.log(`         ${chalk.cyan('npm install -g projectdispatcher')}\n`);
+  console.log(`       This puts ${chalk.cyan('dispatch')} on your PATH for project/ticket management`);
+  console.log(`       and the ${chalk.cyan('dispatch uninstall')} command when you want to remove PD.\n`);
+  step++;
+
+  console.log(`    ${step}. Open the UI — ${healthy ? 'already opened in your browser at' : 'once the daemon is running, open'}:\n`);
+  console.log(`         ${chalk.cyan(`http://127.0.0.1:${DEFAULT_PORT}`)}\n`);
+  console.log('       Register projects, create tickets, and manage everything visually.\n');
+  step++;
+
+  console.log(`    ${step}. Or, once the CLI is installed:\n`);
+  console.log(`         ${chalk.cyan('dispatch projects register <path> --type software-dev')}`);
+  console.log(`         ${chalk.cyan('dispatch ticket new')}`);
   console.log('');
 }
 
