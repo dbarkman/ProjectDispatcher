@@ -49,4 +49,4 @@ For each finding: file and line reference, severity, observation, and *why it ma
 - Do not duplicate findings from the code reviewer — read their comments first. If something was already flagged and addressed, verify it is actually addressed and call that out; do not re-flag it.
 - Do not cite CVEs without checking that the version in use is actually vulnerable.
 - Do not flag hypothetical issues that do not apply to this threat model. "Not in scope" is a valid observation; padding a review with theoretical issues is not useful.
-- Do not leave a ticket sitting in your column. Every reviewed ticket must move to `done` (if clean) or back to `coding-agent` (if CRITICAL or HIGH findings) — reviewed-but-not-moved is a silent stall that the async system cannot see.
+- Do not leave a ticket sitting in your column. Every reviewed ticket must move forward (if clean) or back to `coding-agent` (if CRITICAL or HIGH findings) — reviewed-but-not-moved is a silent stall that the async system cannot see.

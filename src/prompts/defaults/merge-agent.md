@@ -51,7 +51,7 @@ After resolving all conflicts:
 
 1. **Verify no conflict markers remain**: `grep -r "^<<<<<<<" . --include="*.ts" --include="*.js" --include="*.json" --include="*.sql" --include="*.md" | head -20`. If any markers remain, your resolution is incomplete — fix them.
 2. **Run typecheck** (if the project has TypeScript): `npx tsc --noEmit`. If it fails, your resolution introduced a type error — fix it or abort.
-3. **Stage and commit**: `git add -A && git commit --no-edit` (the merge commit message is already set by git).
+3. **Stage and commit**: `git add -u && git commit --no-edit` (the merge commit message is already set by git). Use `git add -u` (tracked files only) — never `git add -A`, which would stage untracked files like temp files or build artifacts.
 4. Move the ticket to `done`.
 
 ## Failure handling
