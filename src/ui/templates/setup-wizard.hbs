@@ -32,23 +32,14 @@
       <label class="block p-4 rounded-lg border cursor-pointer transition-colors border-navy-700 hover:border-accent"
              id="oauth-option">
         <div class="flex items-center gap-3">
-          <input type="radio" name="auth_method" value="oauth" class="accent-accent"
-                 {{#if oauthDetected}}checked{{/if}}>
+          <input type="radio" name="auth_method" value="oauth" class="accent-accent">
           <div class="flex-1">
             <div class="flex items-center gap-2">
               <span class="text-sm font-medium text-white">OAuth (Claude Code login)</span>
-              {{#if oauthDetected}}
-              <span class="text-xs px-2 py-0.5 rounded-full bg-green-900/50 text-green-400">&#10003; Detected</span>
-              {{else}}
-              <span class="text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-400">Not detected</span>
-              {{/if}}
+              <span id="oauth-badge" class="text-xs px-2 py-0.5 rounded-full bg-navy-700 text-gray-400">Checking&hellip;</span>
             </div>
-            <p class="text-xs text-gray-500 mt-1">
-              {{#if oauthDetected}}
-              PD will use your existing Claude Code session.
-              {{else}}
-              Run <code class="text-gray-300">claude login</code> first, then select this option.
-              {{/if}}
+            <p class="text-xs text-gray-500 mt-1" id="oauth-hint">
+              Probing for an active Claude session&hellip;
             </p>
           </div>
         </div>
@@ -58,8 +49,7 @@
       <label class="block p-4 rounded-lg border cursor-pointer transition-colors border-navy-700 hover:border-accent"
              id="apikey-option">
         <div class="flex items-center gap-3">
-          <input type="radio" name="auth_method" value="api_key" class="accent-accent"
-                 {{#unless oauthDetected}}checked{{/unless}}>
+          <input type="radio" name="auth_method" value="api_key" class="accent-accent" checked>
           <div class="flex-1">
             <span class="text-sm font-medium text-white">API Key</span>
             <p class="text-xs text-gray-500 mt-1">Charges against your Anthropic API account.</p>
@@ -169,6 +159,31 @@
 
   radios.forEach(function(r) { r.addEventListener('change', updateFieldVisibility); });
   updateFieldVisibility();
+
+  // Async OAuth detection via subprocess probe
+  fetch('/api/config/ai/detect-oauth')
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      var badge = document.getElementById('oauth-badge');
+      var hint = document.getElementById('oauth-hint');
+      if (data.detected) {
+        badge.textContent = '✓ Detected';
+        badge.className = 'text-xs px-2 py-0.5 rounded-full bg-green-900/50 text-green-400';
+        hint.textContent = 'PD will use your existing Claude Code session.';
+        document.querySelector('input[value="oauth"]').checked = true;
+        document.querySelector('input[value="api_key"]').checked = false;
+        updateFieldVisibility();
+      } else {
+        badge.textContent = 'Not detected';
+        badge.className = 'text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-400';
+        hint.innerHTML = 'Run <code class="text-gray-300">claude login</code> first, then select this option.';
+      }
+    })
+    .catch(function() {
+      var badge = document.getElementById('oauth-badge');
+      badge.textContent = 'Not detected';
+      badge.className = 'text-xs px-2 py-0.5 rounded-full bg-yellow-900/50 text-yellow-400';
+    });
 
   function getFormData() {
     const method = document.querySelector('input[name="auth_method"]:checked').value;

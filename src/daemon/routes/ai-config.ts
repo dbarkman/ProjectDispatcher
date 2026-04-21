@@ -1,8 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { readFile, writeFile, access, rename } from 'node:fs/promises';
-import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { readFile, writeFile, rename } from 'node:fs/promises';
 import { execFile } from 'node:child_process';
 import { reloadConfig, DEFAULT_CONFIG_PATH } from '../../config.js';
 import { CLAUDE_MODELS } from '../../types.js';
@@ -27,15 +25,13 @@ export async function aiConfigRoutes(
   configPath: string = DEFAULT_CONFIG_PATH,
 ): Promise<void> {
 
-  // GET /api/config/ai/detect-oauth — check if ~/.claude/ has tokens
+  // GET /api/config/ai/detect-oauth — probe claude subprocess for working session
   app.get('/api/config/ai/detect-oauth', async () => {
-    const credentialsPath = join(homedir(), '.claude', 'credentials.json');
-    try {
-      await access(credentialsPath);
-      return { detected: true };
-    } catch {
-      return { detected: false };
-    }
+    const result = await runConnectionTest(
+      'oauth',
+      configRef.current.claude_cli.binary_path,
+    );
+    return { detected: result.success };
   });
 
   // POST /api/config/ai — save AI config + run connection test

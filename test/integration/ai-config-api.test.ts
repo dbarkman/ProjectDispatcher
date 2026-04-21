@@ -100,11 +100,36 @@ describe('Setup wizard redirect with configured auth', () => {
 });
 
 describe('AI config detect-oauth endpoint', () => {
-  it('GET /api/config/ai/detect-oauth returns detected status', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/config/ai/detect-oauth' });
+  let detectApp: FastifyInstance;
+  let detectDb: Database;
+  let detectTmpDir: string;
+
+  beforeEach(async () => {
+    detectDb = openDatabase(':memory:');
+    runMigrations(detectDb);
+    seedBuiltins(detectDb);
+
+    detectTmpDir = mkdtempSync(join(tmpdir(), 'pd-detect-'));
+    const cfgPath = join(detectTmpDir, 'config.json');
+    writeFileSync(cfgPath, JSON.stringify({ claude_cli: { binary_path: '/nonexistent-binary' } }));
+    const config = loadConfig(cfgPath);
+    const logger = createLogger(join(detectTmpDir, 'logs'));
+
+    detectApp = await createHttpServer({ configRef: { current: config }, db: detectDb, logger });
+    await detectApp.ready();
+  });
+
+  afterEach(async () => {
+    await detectApp.close();
+    detectDb.close();
+    rmSync(detectTmpDir, { recursive: true, force: true });
+  });
+
+  it('GET /api/config/ai/detect-oauth returns detected:false for missing binary', async () => {
+    const res = await detectApp.inject({ method: 'GET', url: '/api/config/ai/detect-oauth' });
     expect(res.statusCode).toBe(200);
     const body = res.json();
-    expect(typeof body.detected).toBe('boolean');
+    expect(body.detected).toBe(false);
   });
 });
 
