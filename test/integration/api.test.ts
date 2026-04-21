@@ -174,6 +174,32 @@ describe('Projects API', () => {
     void a;
   });
 
+  it('PATCH returns HX-Redirect for htmx requests, not for plain API requests', async () => {
+    const created = await app.inject({
+      method: 'POST',
+      url: '/api/projects',
+      payload: { name: 'RedirTest', path: '/redir-test', project_type_id: 'software-dev' },
+    });
+    const id = created.json().id;
+
+    const plain = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${id}`,
+      payload: { name: 'RedirTest2' },
+    });
+    expect(plain.statusCode).toBe(200);
+    expect(plain.headers['hx-redirect']).toBeUndefined();
+
+    const htmx = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${id}`,
+      headers: { 'hx-request': 'true' },
+      payload: { name: 'RedirTest3' },
+    });
+    expect(htmx.statusCode).toBe(200);
+    expect(htmx.headers['hx-redirect']).toBe(`/ui/projects/${id}`);
+  });
+
   it('PATCH abbreviation no-op (same value) succeeds without bumping updated_at', async () => {
     const created = await app.inject({
       method: 'POST',

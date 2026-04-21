@@ -81,14 +81,12 @@
 
 <script>
   function handleSettingsResponse(event) {
+    var xhr = event.detail.xhr;
+    if (xhr && xhr.status >= 200 && xhr.status < 300) return;
     var status = document.getElementById('settings-status');
-    if (event.detail.successful) {
-      window.location.href = '/ui/projects/{{project.id}}';
-      return;
-    }
     var msg = 'Save failed.';
     try {
-      var body = JSON.parse(event.detail.xhr.responseText);
+      var body = JSON.parse(xhr.responseText);
       if (body && body.error) msg = body.error;
     } catch (e) { /* keep generic */ }
     status.textContent = msg;

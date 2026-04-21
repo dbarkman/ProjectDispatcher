@@ -255,6 +255,9 @@ export async function projectRoutes(app: FastifyInstance, db: Database, schedule
     if (!updated) {
       return reply.status(404).send({ error: 'Project not found' });
     }
+    if (request.headers['hx-request']) {
+      reply.header('HX-Redirect', `/ui/projects/${id}`);
+    }
     return updated;
   });
 
