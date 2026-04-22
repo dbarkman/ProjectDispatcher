@@ -32,7 +32,7 @@ beforeEach(async () => {
   const configRef = { current: config };
   const logger = createLogger(join(tmpDir, 'logs'));
 
-  app = await createHttpServer({ configRef, db, logger });
+  app = await createHttpServer({ configRef, db, logger, configPath: cfgPath });
   await app.ready();
 });
 
@@ -1056,7 +1056,7 @@ describe('Scheduler integration via project creation', () => {
     scheduler = new Scheduler(schedDb, configRef, logger);
     scheduler.start();
 
-    schedApp = await createHttpServer({ configRef, db: schedDb, logger, scheduler });
+    schedApp = await createHttpServer({ configRef, db: schedDb, logger, scheduler, configPath: schedCfgPath });
     await schedApp.ready();
   });
 
