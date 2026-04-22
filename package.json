@@ -1,6 +1,6 @@
 {
   "name": "projectdispatcher",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Async ticket-based orchestration between humans and AI coding agents. Local, single-user, Kanban workflow across every project you own.",
   "keywords": [
     "claude",
