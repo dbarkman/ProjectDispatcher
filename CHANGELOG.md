@@ -5,6 +5,15 @@ All notable changes to Project Dispatcher.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] — 2026-04-21
+
+### Fixed
+
+- **`dispatch --version` was reporting 0.1.0.** The CLI had a hardcoded
+  version string that never updated through 0.1.1 or 0.2.0. Now reads
+  from `package.json` at runtime via `createRequire`, so future
+  `npm version <bump>` calls automatically reflect in the CLI output.
+
 ## [0.2.0] — 2026-04-21
 
 ### Added

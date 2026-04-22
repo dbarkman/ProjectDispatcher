@@ -15,6 +15,7 @@
 //   dispatch update              — check for newer versions
 //   dispatch uninstall           — remove service + optionally data
 
+import { createRequire } from 'node:module';
 import { Command } from 'commander';
 import { registerProjectCommands } from './commands/projects.js';
 import { registerTicketCommands } from './commands/tickets.js';
@@ -22,12 +23,17 @@ import { registerDaemonCommands } from './commands/daemon.js';
 import { registerUpdateCommands } from './commands/update.js';
 import { registerUninstallCommands } from './commands/uninstall.js';
 
+// Read version from package.json so it auto-updates with `npm version <bump>`.
+// Previous hardcoded string drifted (stayed at 0.1.0 through 0.1.1 + 0.2.0).
+const require = createRequire(import.meta.url);
+const pkg = require('../../package.json') as { version: string };
+
 const program = new Command();
 
 program
   .name('dispatch')
   .description('Project Dispatcher — async ticket-based orchestration for AI agents')
-  .version('0.1.0');
+  .version(pkg.version);
 
 registerProjectCommands(program);
 registerTicketCommands(program);
