@@ -5,6 +5,36 @@ All notable changes to Project Dispatcher.
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] — 2026-04-21
+
+### Added
+
+- **Merge agent** (pd-47). New agent type that handles both clean merges and
+  conflict resolution. Replaces the daemon's direct `git merge` path for
+  software-dev and vps-maintenance project types. Tickets flow
+  Security Review → Merging → Done. Agent reads conflict markers, consults
+  the ticket body + diff context, applies resolution strategies (same-region
+  concatenation, placeholder replacement, migration-filename renumbering),
+  commits the merge. On genuinely conflicting semantics, aborts and routes
+  back to Human after a retry cap with a detailed findings comment.
+
+### Fixed
+
+- **Test suite no longer clobbers the user's live `config.json`**. `createHttpServer`
+  now accepts an optional `configPath` that is threaded through to both
+  `configRoutes` and `aiConfigRoutes`. A runtime guard throws when the
+  server is instantiated under Vitest/`NODE_ENV=test` without an explicit
+  `configPath` — fail-loud protection against any future test regression.
+  All existing test callsites updated to pass a tmp path. Production
+  daemon callsite now passes `DEFAULT_CONFIG_PATH` explicitly.
+  Context: previously running `npm test` overwrote
+  `~/Development/.tasks/config.json` with `ui.port=9999`,
+  `claude_cli.binary_path=/usr/local/bin/claude`, and
+  `discovery.root_path=/some/other/path` — the exact values from
+  `config-hot-reload.test.ts`.
+- **Project settings save navigation**. Settings save uses
+  `HX-Redirect` header to route back to project detail on success.
+
 ## [0.1.1] — 2026-04-21
 
 First-run UX polish from smoke-testing the 0.1.0 install on a clean machine.
