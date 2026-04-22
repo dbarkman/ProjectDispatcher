@@ -22,6 +22,14 @@ export interface HttpServerDeps {
   db: Database;
   logger: Logger;
   scheduler?: Scheduler;
+  /**
+   * Path the config routes read/write. Defaults to
+   * `DEFAULT_CONFIG_PATH` at `~/Development/.tasks/config.json` when
+   * omitted. Tests MUST pass an isolated temp path — PATCH /api/config
+   * writes to this file, so defaulting to the real config.json in a
+   * test context will clobber the user's live config.
+   */
+  configPath?: string;
 }
 
 /**
@@ -38,7 +46,20 @@ export interface HttpServerDeps {
  * non-local origins regardless.
  */
 export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyInstance> {
-  const { configRef, db, logger, scheduler } = deps;
+  const { configRef, db, logger, scheduler, configPath } = deps;
+
+  // Defense in depth: if running under Vitest and no configPath was passed,
+  // refuse to start. Previously a missing configPath silently fell through
+  // to DEFAULT_CONFIG_PATH (~/Development/.tasks/config.json) — tests that
+  // PATCH /api/config or /api/config/ai would clobber the user's real
+  // config. Fail loud in tests; production always passes configPath via
+  // the daemon bootstrap.
+  if (!configPath && (process.env.VITEST || process.env.NODE_ENV === 'test')) {
+    throw new Error(
+      'createHttpServer called in a test environment without configPath — ' +
+        'pass an isolated tmp path to avoid clobbering the user\'s real config.json',
+    );
+  }
 
   const app = Fastify({
     // Fastify 5 uses `loggerInstance` for external Pino instances (not
@@ -162,8 +183,8 @@ export async function createHttpServer(deps: HttpServerDeps): Promise<FastifyIns
   await ticketRoutes(app, db, scheduler);
   await attachmentRoutes(app, db);
   await agentRunRoutes(app, db);
-  await configRoutes(app, configRef);
-  await aiConfigRoutes(app, configRef);
+  await configRoutes(app, configRef, configPath);
+  await aiConfigRoutes(app, configRef, configPath);
   await discoveryRoutes(app, db, configRef);
 
   // Web UI (htmx + Handlebars) — serves HTML pages

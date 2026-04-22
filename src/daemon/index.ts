@@ -22,7 +22,7 @@ import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { readdir, copyFile, mkdir } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { loadConfig } from '../config.js';
+import { loadConfig, DEFAULT_CONFIG_PATH } from '../config.js';
 import type { ConfigRef } from '../config.schema.js';
 import { createLogger } from '../logger.js';
 import { openDatabase } from '../db/index.js';
@@ -124,7 +124,7 @@ async function main(): Promise<void> {
   const scheduler = new Scheduler(db, configRef, logger);
 
   // 7. HTTP server — pass scheduler so routes can trigger heartbeat resets
-  const app = await createHttpServer({ configRef, db, logger, scheduler });
+  const app = await createHttpServer({ configRef, db, logger, scheduler, configPath: DEFAULT_CONFIG_PATH });
 
   // 8. Listen
   const port = configRef.current.ui.port;

@@ -1,6 +1,9 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Sqlite from 'better-sqlite3';
 import pino from 'pino';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { configSchema } from '../config.schema.js';
 import { createHttpServer } from './http.js';
 import type { FastifyInstance } from 'fastify';
@@ -24,7 +27,8 @@ function buildTestServer(port = 5757): Promise<FastifyInstance> {
 
   const config = configSchema.parse({ ui: { port } });
   const logger = pino({ level: 'silent' });
-  return createHttpServer({ configRef: { current: config }, db, logger });
+  const configPath = join(mkdtempSync(join(tmpdir(), 'pd-http-test-')), 'config.json');
+  return createHttpServer({ configRef: { current: config }, db, logger, configPath });
 }
 
 describe('Host header allowlist (DNS rebinding protection)', () => {

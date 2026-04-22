@@ -134,7 +134,10 @@ describe('PATCH /api/config restart_required', () => {
     writeFileSync(cfgPath, JSON.stringify({ ai: { auth_method: 'oauth' } }));
     configRef = { current: loadConfig(cfgPath) };
     const logger = createLogger(join(tmpDir, 'logs'));
-    app = await createHttpServer({ configRef, db, logger });
+    // MUST pass configPath — otherwise PATCH /api/config writes to the
+    // real `~/Development/.tasks/config.json` and clobbers the user's
+    // live config. See http.ts `HttpServerDeps.configPath` for context.
+    app = await createHttpServer({ configRef, db, logger, configPath: cfgPath });
     await app.ready();
   });
 
