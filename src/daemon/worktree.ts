@@ -40,6 +40,19 @@ async function branchExists(projectPath: string, branch: string): Promise<boolea
 }
 
 /**
+ * Check whether a directory is a git repo with at least one commit.
+ * Returns false for: no .git, .git but no commits (empty HEAD).
+ */
+export async function isGitReady(projectPath: string): Promise<boolean> {
+  try {
+    await git(projectPath, ['rev-parse', '--verify', 'HEAD']);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Create a git worktree for a ticket. Idempotent — if the worktree
  * already exists at the expected path, returns it without modification.
  *

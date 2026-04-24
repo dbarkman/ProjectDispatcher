@@ -13,6 +13,7 @@ import {
   listWorktrees,
   mergeWorktreeBranch,
   mergeAndCleanup,
+  isGitReady,
 } from './worktree.js';
 
 const execFileAsync = promisify(execFile);
@@ -217,5 +218,41 @@ describe('git worktree operations', () => {
       const ticketWt = worktrees.find((wt) => wt.branch?.includes(TICKET_ID));
       expect(ticketWt).toBeDefined();
     });
+  });
+});
+
+describe('isGitReady', () => {
+  it('returns false for empty directory (no .git)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pd-nogit-'));
+    try {
+      expect(await isGitReady(dir)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns false for git-init with no commits', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pd-nohd-'));
+    try {
+      await git(dir, ['init', '--initial-branch', 'main']);
+      expect(await isGitReady(dir)).toBe(false);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('returns true for repo with at least one commit', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'pd-ready-'));
+    try {
+      await git(dir, ['init', '--initial-branch', 'main']);
+      await git(dir, ['config', 'user.email', 'test@test.com']);
+      await git(dir, ['config', 'user.name', 'Test']);
+      await execFileAsync('touch', ['f.txt'], { cwd: dir });
+      await git(dir, ['add', '.']);
+      await git(dir, ['commit', '-m', 'init']);
+      expect(await isGitReady(dir)).toBe(true);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });

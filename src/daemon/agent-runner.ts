@@ -10,7 +10,7 @@ import type { Config } from '../config.schema.js';
 import { DEFAULT_DB_PATH, DEFAULT_TASKS_DIR } from '../db/index.js';
 import { addComment } from '../db/queries/tickets.js';
 import { buildPrompt } from '../services/prompt-builder.js';
-import { createWorktree } from './worktree.js';
+import { createWorktree, isGitReady } from './worktree.js';
 import { isProcessAlive } from './pidfile.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -276,8 +276,18 @@ export async function runAgent(
     let agentWorktreePath: string | null = null;
 
     if (config.agents.parallel_coding && agentTypeId !== 'merge-agent') {
-      agentCwd = await createWorktree(project.path, ticketId, logger);
-      agentWorktreePath = agentCwd;
+      const gitReady = await isGitReady(project.path);
+      if (gitReady) {
+        try {
+          agentCwd = await createWorktree(project.path, ticketId, logger);
+          agentWorktreePath = agentCwd;
+        } catch (wtErr) {
+          childLogger.info({ err: wtErr }, 'Worktree creation failed — falling back to project root');
+          agentCwd = project.path;
+        }
+      } else {
+        childLogger.info('Project is not a git repo or has no commits — skipping worktree');
+      }
     }
 
     const startedAt = Date.now();

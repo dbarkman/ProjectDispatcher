@@ -18,13 +18,14 @@ import { randomUUID } from 'node:crypto';
 
 vi.mock('../../src/daemon/worktree.js', () => ({
   createWorktree: vi.fn(),
+  isGitReady: vi.fn().mockResolvedValue(true),
   mergeAndCleanup: vi.fn(),
   removeWorktree: vi.fn(),
   worktreePath: vi.fn(),
   worktreeBranch: vi.fn(),
 }));
 
-import { createWorktree } from '../../src/daemon/worktree.js';
+import { createWorktree, isGitReady } from '../../src/daemon/worktree.js';
 
 const silentLogger = pino({ level: 'silent' });
 let db: Database;
@@ -275,12 +276,14 @@ describe('runAgent concurrency reservation', () => {
 
     const codingAgentType = { id: 'coding-agent' };
 
-    // Make createWorktree throw so runAgent rejects without spawning —
+    // Make isGitReady throw so runAgent rejects without spawning —
     // simulates any pre-spawn failure after the slot has been reserved.
-    vi.mocked(createWorktree).mockRejectedValueOnce(new Error('mocked worktree failure'));
+    // (createWorktree failures are now caught by the fallback path, so
+    // we use isGitReady — the first await after slot reservation.)
+    vi.mocked(isGitReady).mockRejectedValueOnce(new Error('mocked git check failure'));
 
     // Kick off runAgent without awaiting. Everything up to the first await
-    // (createWorktree) runs synchronously in the executor, including the
+    // (isGitReady) runs synchronously in the executor, including the
     // sync cap checks and the reservation. If the reservation is AFTER the
     // first await (the bug), getActiveCount would still be 0 at this point.
     const promise = runAgent(
@@ -293,7 +296,7 @@ describe('runAgent concurrency reservation', () => {
     expect(getActiveCount(project.id)).toBe(1);
 
     // Propagates the mocked failure; catch path must release the slot.
-    await expect(promise).rejects.toThrow('mocked worktree failure');
+    await expect(promise).rejects.toThrow('mocked git check failure');
     expect(getActiveCount(project.id)).toBe(0);
   });
 
