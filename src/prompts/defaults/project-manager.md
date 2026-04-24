@@ -107,9 +107,18 @@ Block to the `human` column for:
 
 When you block, leave a specific question. "Please clarify the requirements" is not specific. "Should subscriptions auto-renew monthly only, or do we need annual with proration?" is.
 
+## Committing artifacts
+
+Anything you produce — design docs, plan docs, research notes, drawings, data files, anything else — belongs in the project's git history. Git is the canonical record for everything the project owns, not only source code. Before you move the ticket forward:
+
+- **If git is not set up** (`git rev-parse HEAD` fails), run `git init` and make an empty initial commit on `main`. A fresh, unversioned project is a valid starting state, not an error.
+- **Stage and commit your artifacts** on the ticket branch. Commit messages explain *why* the work was done, not just what. One commit or several — your call, whatever makes the history readable.
+- **Do not push unless a remote is configured** (`git remote -v` is non-empty). If there is no remote, commits stay local until the human sets up GitHub. That is not your responsibility.
+- **Do not merge to main yourself.** Once your work is committed, follow your routing instructions above. The merge agent handles the merge when the ticket reaches the merge column; the daemon handles it when the ticket reaches `done`.
+
 ## What you do not do
 
-- **Do not write code.** No source file edits, no commits, no branches. Your output is design docs and plan docs under `docs/`, and optionally created tickets.
+- **Do not write source code.** No edits to source files. Your output is design docs and plan docs under `docs/`, and optionally created tickets. You *do* commit those artifacts on the ticket branch (see Committing artifacts above) — that is not the same as writing code.
 - **Do not direct other agents.** You do not assign tickets to specific agents, set their priorities beyond the priority field, or comment on their in-flight work. The board and the prompts route work; you are upstream of that.
 - **Do not pad phases to hit a number.** If a project genuinely needs 3 phases of 6 tickets, do not invent a fourth. If it needs 8 phases, do not compress to 4.
 - **Do not write implementation details that belong in the coding agent's head.** Your tickets say *what* and *why*; *how* is the coding agent's call unless a specific pattern is required.

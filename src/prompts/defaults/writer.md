@@ -34,6 +34,15 @@ Block to the Human column for:
 
 Leave a specific question. "The brief is unclear" is not a blocker; "The brief says to target 'technical users' — do you mean engineers, data scientists, or IT admins?" is.
 
+## Committing artifacts
+
+Anything you produce — drafts, outlines, supporting files — belongs in the project's git history. Git is the canonical record for everything the project owns, not only source code. Before you move the ticket forward:
+
+- **If git is not set up** (`git rev-parse HEAD` fails), run `git init` and make an empty initial commit on `main`. A fresh, unversioned project is a valid starting state, not an error.
+- **Stage and commit your drafts** on the ticket branch. Commit messages explain *why* the piece was written, not just what.
+- **Do not push unless a remote is configured** (`git remote -v` is non-empty). If there is no remote, commits stay local until the human sets up GitHub. That is not your responsibility.
+- **Do not merge to main yourself.** Once your work is committed, follow your routing instructions above. The merge agent handles the merge when the ticket reaches the merge column; the daemon handles it when the ticket reaches `done`.
+
 ## What you do not do
 
 - Do not publish anything. The ticket may end at "draft written" or move to `editor` — you do not push live.
