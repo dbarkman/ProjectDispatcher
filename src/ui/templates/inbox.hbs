@@ -7,8 +7,7 @@
 </div>
 <div id="inbox-new-ticket" class="hidden mb-6 card">
   <h3 class="text-sm font-semibold text-gray-400 mb-3">New Ticket</h3>
-  <form hx-post="/api/tickets" hx-ext="json-enc" hx-swap="none"
-        hx-on::after-request="if(event.detail.successful) location.reload()">
+  <form id="inbox-ticket-form" onsubmit="return submitInboxTicket(event)">
     <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
       <div>
         <label class="block text-xs text-gray-500 mb-1">Project</label>
@@ -40,11 +39,45 @@
         class="w-full bg-navy-900 border border-navy-700 rounded-lg p-3 text-sm text-gray-200 placeholder-gray-600 focus:border-accent focus:outline-none resize-y"></textarea>
     </div>
     <div class="mt-2 flex gap-2">
-      <button type="submit" class="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">Create</button>
+      <button type="submit" id="inbox-ticket-btn" class="px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">Create</button>
       <button type="button" onclick="document.getElementById('inbox-new-ticket').classList.add('hidden')" class="px-4 py-2 bg-navy-700 hover:bg-navy-600 text-gray-300 text-sm rounded-lg transition-colors">Cancel</button>
     </div>
   </form>
 </div>
+<script>
+  async function submitInboxTicket(e) {
+    e.preventDefault();
+    var form = document.getElementById('inbox-ticket-form');
+    var btn = document.getElementById('inbox-ticket-btn');
+    btn.disabled = true;
+    btn.textContent = 'Creating...';
+    try {
+      var res = await fetch('/api/tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: form.querySelector('[name=project_id]').value,
+          title: form.querySelector('[name=title]').value,
+          body: form.querySelector('[name=body]').value || undefined,
+          priority: form.querySelector('[name=priority]').value,
+        }),
+      });
+      if (res.ok) {
+        document.getElementById('inbox-new-ticket').classList.add('hidden');
+        location.reload();
+      } else {
+        var data = await res.json().catch(function() { return {}; });
+        alert('Failed to create ticket: ' + (data.error || 'Unknown error'));
+      }
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Create';
+    }
+    return false;
+  }
+</script>
 {{/if}}
 
 {{#if isEmpty}}

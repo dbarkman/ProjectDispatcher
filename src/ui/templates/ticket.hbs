@@ -85,6 +85,7 @@
         body: JSON.stringify(payload),
       });
       if (res.ok) {
+        toggleEditMode(false);
         location.reload();
       } else {
         const err = await res.json();

@@ -24,9 +24,7 @@
     onclick="event.stopPropagation()">
     <h3 class="text-lg font-semibold text-gray-200 mb-1">Register Project</h3>
     <p id="register-folder-name" class="text-sm text-gray-400 mb-4"></p>
-    <form hx-post="/api/projects" hx-ext="json-enc" hx-swap="none"
-          hx-on::before-request="document.getElementById('register-error').classList.add('hidden')"
-          hx-on::after-request="handleRegisterResponse(event)">
+    <form id="register-form" onsubmit="return submitRegisterForm(event)">
       <input type="hidden" id="register-path" name="path">
       <div class="mb-3">
         <label class="block text-xs text-gray-500 mb-1">Name</label>
@@ -63,7 +61,7 @@
         </p>
       </div>
       <div class="flex gap-2">
-        <button type="submit"
+        <button type="submit" id="register-btn"
           class="flex-1 px-4 py-2 bg-accent hover:bg-accent-hover text-white text-sm rounded-lg transition-colors">
           Add Project
         </button>
@@ -72,8 +70,6 @@
           Cancel
         </button>
       </div>
-      <!-- Server-error slot. htmx hides this before each submit; the
-           after-request handler fills it from the response body on failure. -->
       <div id="register-error" class="hidden mt-3 text-xs text-red-400"></div>
     </form>
   </div>
@@ -116,23 +112,42 @@
     document.getElementById('register-abbr-preview').textContent = abbr;
   }
 
-  // Surface API errors in the modal instead of leaving it looking frozen
-  // after a failed submit. (Ticket #08cec285.)
-  function handleRegisterResponse(event) {
-    if (event.detail.successful) {
-      location.reload();
-      return;
-    }
+  async function submitRegisterForm(e) {
+    e.preventDefault();
+    var form = document.getElementById('register-form');
+    var btn = document.getElementById('register-btn');
     var errorDiv = document.getElementById('register-error');
-    var message = 'Registration failed.';
+    errorDiv.classList.add('hidden');
+    btn.disabled = true;
+    btn.textContent = 'Registering...';
+
     try {
-      var body = JSON.parse(event.detail.xhr.responseText);
-      if (body && body.error) message = body.error;
-    } catch (e) {
-      // Non-JSON response — keep the generic message.
+      var res = await fetch('/api/projects', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: form.querySelector('[name=name]').value,
+          path: form.querySelector('[name=path]').value,
+          abbreviation: form.querySelector('[name=abbreviation]').value,
+          project_type_id: form.querySelector('[name=project_type_id]').value,
+        }),
+      });
+      if (res.ok) {
+        document.getElementById('register-modal').classList.add('hidden');
+        location.reload();
+      } else {
+        var body = await res.json().catch(function() { return {}; });
+        errorDiv.textContent = body.error || 'Registration failed.';
+        errorDiv.classList.remove('hidden');
+      }
+    } catch (err) {
+      errorDiv.textContent = 'Registration failed: network error';
+      errorDiv.classList.remove('hidden');
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Add Project';
     }
-    errorDiv.textContent = message;
-    errorDiv.classList.remove('hidden');
+    return false;
   }
 </script>
 {{/if}}
