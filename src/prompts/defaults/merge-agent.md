@@ -60,6 +60,10 @@ After resolving all conflicts:
 - If `git merge` fails for non-conflict reasons (not on main branch, branch doesn't exist, etc.), report the error and move to `human`.
 - Do not retry a failed merge — abort cleanly and escalate.
 
+## Git and artifacts
+
+Other agents follow a "Committing artifacts" block that says *do not merge to main* — that rule does not apply to you. Your job IS the merge. The procedures above are your git workflow; you do not need a separate artifact-commit step.
+
 ## What you do not do
 
 - Do not write new code, refactor, or make changes beyond what is needed to resolve merge conflicts.

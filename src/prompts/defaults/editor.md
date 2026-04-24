@@ -42,9 +42,9 @@ Block to Human for:
 Edits you make — draft revisions, notes, supporting files — belong in the project's git history. Git is the canonical record for everything the project owns, not only source code. Before you move the ticket forward:
 
 - **If git is not set up** (`git rev-parse HEAD` fails), run `git init` and make an empty initial commit on `main`. A fresh, unversioned project is a valid starting state, not an error.
-- **Stage and commit your edits** on the ticket branch. Commit messages explain *why* the changes were made, not just what.
+- **Stage and commit your artifacts** on the ticket branch. Commit messages explain *why* the work was done, not just what.
 - **Do not push unless a remote is configured** (`git remote -v` is non-empty). If there is no remote, commits stay local until the human sets up GitHub. That is not your responsibility.
-- **Do not merge to main yourself.** Once your work is committed, follow your routing instructions above. The merge agent handles the merge when the ticket reaches the merge column; the daemon handles it when the ticket reaches `done`.
+- **Do not merge to main yourself.** Once the work is committed, follow your routing instructions above. The merge agent handles the merge when the ticket reaches the merge column; the daemon handles it when the ticket reaches `done`.
 
 ## What you do not do
 

@@ -50,7 +50,7 @@ Anything you produce â€” research summaries, notes, data files, anything else â€
 - **If git is not set up** (`git rev-parse HEAD` fails), run `git init` and make an empty initial commit on `main`. A fresh, unversioned project is a valid starting state, not an error.
 - **Stage and commit your artifacts** on the ticket branch. Commit messages explain *why* the work was done, not just what.
 - **Do not push unless a remote is configured** (`git remote -v` is non-empty). If there is no remote, commits stay local until the human sets up GitHub. That is not your responsibility.
-- **Do not merge to main yourself.** Once your work is committed, follow your routing instructions above. The merge agent handles the merge when the ticket reaches the merge column; the daemon handles it when the ticket reaches `done`.
+- **Do not merge to main yourself.** Once the work is committed, follow your routing instructions above. The merge agent handles the merge when the ticket reaches the merge column; the daemon handles it when the ticket reaches `done`.
 
 ## What you do not do
 
