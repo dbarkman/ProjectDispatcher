@@ -174,6 +174,35 @@ async function getCurrentBranch(projectPath: string): Promise<string | null> {
 const MAIN_BRANCH_NAMES = new Set(['main', 'master']);
 
 /**
+ * If the repo has a lingering MERGE_HEAD (from a crashed/timed-out
+ * merge-agent), abort the merge so subsequent merges are not blocked.
+ * Returns true if a stale merge was cleaned up.
+ */
+export async function ensureCleanMergeState(
+  projectPath: string,
+  logger: Logger,
+): Promise<boolean> {
+  try {
+    await git(projectPath, ['rev-parse', '--verify', 'MERGE_HEAD']);
+  } catch {
+    return false;
+  }
+
+  logger.warn({ projectPath }, 'Stale MERGE_HEAD detected — aborting leftover merge');
+  try {
+    await git(projectPath, ['merge', '--abort']);
+  } catch {
+    try {
+      await git(projectPath, ['reset', '--merge']);
+    } catch (resetErr) {
+      logger.error({ err: resetErr, projectPath }, 'Failed to clean stale merge state');
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Merge a ticket branch into main of the main working copy.
  *
  * Verifies the working copy is on main/master before merging.

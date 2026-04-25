@@ -43,7 +43,7 @@ If ANY conflict falls into the "must not resolve" category, abort the entire mer
 ```bash
 git merge --abort
 ```
-Then add a comment explaining which files had unresolvable conflicts and why, and move the ticket to `human`.
+Then add a `block` comment listing each conflicted file, the conflict type, and the relevant diff hunks. Move the ticket to `coding-agent` — the coding agent that wrote the branch is best placed to rebase onto main and resolve semantic conflicts. Only move to `human` if the conflict is ambiguous enough that product-level judgment is needed (e.g. two tickets made contradictory product decisions).
 
 ## Post-resolution verification
 
@@ -56,7 +56,7 @@ After resolving all conflicts:
 
 ## Failure handling
 
-- If you cannot resolve conflicts after a careful attempt, run `git merge --abort` and move the ticket to `human` with a detailed comment listing each conflicted file and why you could not resolve it.
+- If you cannot resolve conflicts after a careful attempt, run `git merge --abort` and move the ticket to `coding-agent` with a detailed `block` comment listing each conflicted file, the conflict type, and the diff hunks. The coding agent will rebase and resolve.
 - If `git merge` fails for non-conflict reasons (not on main branch, branch doesn't exist, etc.), report the error and move to `human`.
 - Do not retry a failed merge — abort cleanly and escalate.
 
@@ -69,4 +69,4 @@ Other agents follow a "Committing artifacts" block that says *do not merge to ma
 - Do not write new code, refactor, or make changes beyond what is needed to resolve merge conflicts.
 - Do not run the full test suite — that is the CI/reviewer's job. Only run `tsc --noEmit` as a quick sanity check.
 - Do not modify files that are not part of the conflict.
-- Do not leave a ticket sitting in your column. Every ticket must move to `done` (merge succeeded) or `human` (merge failed) — stuck tickets are invisible to the system.
+- Do not leave a ticket sitting in your column. Every ticket must move to `done` (merge succeeded), `coding-agent` (merge conflict — agent resolves), or `human` (non-conflict failure or ambiguous product decision) — stuck tickets are invisible to the system.

@@ -13,6 +13,7 @@ import {
   listWorktrees,
   mergeWorktreeBranch,
   mergeAndCleanup,
+  ensureCleanMergeState,
   isGitReady,
 } from './worktree.js';
 
@@ -218,6 +219,95 @@ describe('git worktree operations', () => {
       const ticketWt = worktrees.find((wt) => wt.branch?.includes(TICKET_ID));
       expect(ticketWt).toBeDefined();
     });
+  });
+});
+
+describe('ensureCleanMergeState', () => {
+  let repoDir: string;
+
+  beforeEach(async () => {
+    repoDir = await initBareTestRepo();
+  });
+
+  afterEach(async () => {
+    await rm(repoDir, { recursive: true, force: true });
+  });
+
+  it('returns false when no MERGE_HEAD exists (clean repo)', async () => {
+    const cleaned = await ensureCleanMergeState(repoDir, logger);
+    expect(cleaned).toBe(false);
+  });
+
+  it('aborts a stale merge and returns true', async () => {
+    const wtPath = await createWorktree(repoDir, TICKET_ID, logger);
+
+    await execFileAsync('sh', ['-c', 'echo "main side" > conflict.txt'], { cwd: repoDir });
+    await git(repoDir, ['add', '.']);
+    await git(repoDir, ['commit', '-m', 'main change']);
+
+    await execFileAsync('sh', ['-c', 'echo "branch side" > conflict.txt'], { cwd: wtPath });
+    await git(wtPath, ['add', '.']);
+    await git(wtPath, ['commit', '-m', 'branch change']);
+
+    // Start a merge that will conflict — git merge exits non-zero but MERGE_HEAD exists
+    try {
+      await git(repoDir, ['merge', `ticket/${TICKET_ID}`, '--no-edit']);
+    } catch {
+      // Expected: merge fails with conflict
+    }
+
+    // Verify MERGE_HEAD exists
+    const mergeHeadBefore = await git(repoDir, ['rev-parse', '--verify', 'MERGE_HEAD']).then(() => true).catch(() => false);
+    expect(mergeHeadBefore).toBe(true);
+
+    const cleaned = await ensureCleanMergeState(repoDir, logger);
+    expect(cleaned).toBe(true);
+
+    // Verify MERGE_HEAD is gone
+    const mergeHeadAfter = await git(repoDir, ['rev-parse', '--verify', 'MERGE_HEAD']).then(() => true).catch(() => false);
+    expect(mergeHeadAfter).toBe(false);
+
+    // Verify no conflicted files remain (worktree dir may show as modified)
+    const status = await git(repoDir, ['status', '--porcelain']);
+    expect(status).not.toContain('UU ');
+    expect(status).not.toContain('AA ');
+  });
+
+  it('allows a subsequent merge after cleaning stale state', async () => {
+    const wtPath = await createWorktree(repoDir, TICKET_ID, logger);
+
+    await execFileAsync('sh', ['-c', 'echo "main side" > conflict.txt'], { cwd: repoDir });
+    await git(repoDir, ['add', '.']);
+    await git(repoDir, ['commit', '-m', 'main change']);
+
+    await execFileAsync('sh', ['-c', 'echo "branch side" > conflict.txt'], { cwd: wtPath });
+    await git(wtPath, ['add', '.']);
+    await git(wtPath, ['commit', '-m', 'branch change']);
+
+    // Create a second, non-conflicting branch
+    const secondId = 'bbbbbbbb-cccc-dddd-eeee-ffffffffffff';
+    const wt2Path = await createWorktree(repoDir, secondId, logger);
+    await execFileAsync('sh', ['-c', 'echo "clean addition" > clean-file.txt'], { cwd: wt2Path });
+    await git(wt2Path, ['add', '.']);
+    await git(wt2Path, ['commit', '-m', 'clean addition']);
+
+    // Trigger conflicting merge, leave MERGE_HEAD
+    try {
+      await git(repoDir, ['merge', `ticket/${TICKET_ID}`, '--no-edit']);
+    } catch {
+      // Expected
+    }
+
+    // Clean up stale state
+    await ensureCleanMergeState(repoDir, logger);
+
+    // Now the clean branch should merge fine
+    const result = await mergeWorktreeBranch(repoDir, secondId, logger);
+    expect(result.merged).toBe(true);
+    expect(result.conflicted).toBe(false);
+
+    await removeWorktree(repoDir, TICKET_ID, logger);
+    await removeWorktree(repoDir, secondId, logger);
   });
 });
 

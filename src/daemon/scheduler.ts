@@ -396,11 +396,10 @@ export class Scheduler {
           ).run(ticket.id);
           this.logger.info({ ticketId: ticket.id }, 'Worktree merged and cleaned up');
         } else if (result.conflicted) {
-          // Move ticket back to human with conflict info
           const now = Date.now();
           this.db.transaction(() => {
             this.db.prepare(
-              `UPDATE tickets SET "column" = 'human', updated_at = ? WHERE id = ?`,
+              `UPDATE tickets SET "column" = 'coding-agent', claimed_by_run_id = NULL, claimed_at = NULL, updated_at = ? WHERE id = ?`,
             ).run(now, ticket.id);
             this.db.prepare(
               `INSERT INTO ticket_comments (id, ticket_id, type, author, body, meta, created_at)
@@ -408,12 +407,12 @@ export class Scheduler {
             ).run(
               randomUUID(),
               ticket.id,
-              `Merge conflict when merging branch ticket/${ticket.id} into main. Manual resolution required.`,
+              `Merge conflict when merging branch ticket/${ticket.id} into main. Rebase your branch onto main and resolve the conflicts, then move back to code-reviewer.`,
               JSON.stringify({ error: result.error }),
               now,
             );
           })();
-          this.logger.warn({ ticketId: ticket.id }, 'Merge conflict — ticket moved to human');
+          this.logger.warn({ ticketId: ticket.id }, 'Merge conflict — ticket routed to coding-agent');
         } else {
           this.logger.warn({ ticketId: ticket.id, error: result.error }, 'Merge failed');
         }

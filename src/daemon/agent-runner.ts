@@ -10,7 +10,7 @@ import type { Config } from '../config.schema.js';
 import { DEFAULT_DB_PATH, DEFAULT_TASKS_DIR } from '../db/index.js';
 import { addComment } from '../db/queries/tickets.js';
 import { buildPrompt } from '../services/prompt-builder.js';
-import { createWorktree, isGitReady } from './worktree.js';
+import { createWorktree, isGitReady, ensureCleanMergeState } from './worktree.js';
 import { isProcessAlive } from './pidfile.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -290,6 +290,10 @@ export async function runAgent(
       }
     }
 
+    if (agentTypeId === 'merge-agent') {
+      await ensureCleanMergeState(project.path, childLogger);
+    }
+
     const startedAt = Date.now();
     db.prepare(
       `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, exit_status, worktree_path)
@@ -410,6 +414,12 @@ export async function runAgent(
         }
 
         finalizeRun(db, runId, ticketId, agentTypeId, projectId, exitStatus, errorMessage, childLogger);
+
+        if (agentTypeId === 'merge-agent' && exitStatus !== 'success') {
+          ensureCleanMergeState(project.path, childLogger).catch((cleanupErr) => {
+            childLogger.error({ err: cleanupErr }, 'Post-merge cleanup failed');
+          });
+        }
       });
 
       child.on('error', (err) => {
@@ -417,6 +427,12 @@ export async function runAgent(
         clearTimeout(timer);
         if (killTimer) clearTimeout(killTimer);
         finalizeRun(db, runId, ticketId, agentTypeId, projectId, 'crashed', `Spawn error: ${err.message}`, childLogger);
+
+        if (agentTypeId === 'merge-agent') {
+          ensureCleanMergeState(project.path, childLogger).catch((cleanupErr) => {
+            childLogger.error({ err: cleanupErr }, 'Post-merge cleanup failed');
+          });
+        }
       });
 
       // Detach: daemon can exit without waiting for this child.
