@@ -53,6 +53,22 @@ export class Scheduler {
   private configRef: ConfigRef;
   private logger: Logger;
 
+  // Watchdog: periodic scan for overdue heartbeats whose in-memory timer
+  // was lost or clobbered. Catches all drift modes — failed CLI wake,
+  // race between resetProject and handleHeartbeat, lost timers.
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly WATCHDOG_INTERVAL_MS = 30_000;
+  private static readonly WATCHDOG_OVERDUE_GRACE_MS = 10_000;
+
+  // Race guard: resetProject bumps the epoch for a project. handleHeartbeat
+  // checks before/after its async work — if the epoch changed, a reset
+  // happened mid-flight and its sooner timer should stand.
+  private resetEpoch = new Map<string, number>();
+
+  // Tracks projects with a handleHeartbeat currently executing. Prevents
+  // the watchdog from double-firing a project that's already in progress.
+  private inFlight = new Set<string>();
+
   constructor(db: Database, configRef: ConfigRef, logger: Logger) {
     this.db = db;
     this.configRef = configRef;
@@ -108,16 +124,26 @@ export class Scheduler {
       )
       .all() as HeartbeatRow[];
 
+    let overdueCount = 0;
     for (const hb of projects) {
+      if (hb.next_check_at < now) {
+        overdueCount++;
+        this.logger.warn(
+          { projectId: hb.project_id, overdueMs: now - hb.next_check_at },
+          'Startup: overdue heartbeat — will fire immediately',
+        );
+      }
       this.scheduleNext(hb.project_id, hb.next_check_at);
     }
+
+    this.startWatchdog();
 
     const activeCount = (this.db
       .prepare("SELECT COUNT(*) AS c FROM projects WHERE status = 'active'")
       .get() as { c: number }).c;
 
     this.logger.info(
-      { projectCount: projects.length, activeProjects: activeCount, repairedOrphans: orphans.length },
+      { projectCount: projects.length, activeProjects: activeCount, repairedOrphans: orphans.length, overdueAtStartup: overdueCount },
       'Scheduler started',
     );
   }
@@ -138,6 +164,10 @@ export class Scheduler {
    * Stop the scheduler: clear all timers. Does NOT modify DB state.
    */
   stop(): void {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
+    }
     for (const [projectId, timer] of this.timers) {
       clearTimeout(timer);
       this.logger.debug({ projectId }, 'Timer cleared');
@@ -163,6 +193,9 @@ export class Scheduler {
          WHERE project_id = ?`,
       )
       .run(nextCheck, now, now, projectId);
+
+    // Bump epoch so any in-flight handleHeartbeat skips its own reschedule
+    this.resetEpoch.set(projectId, (this.resetEpoch.get(projectId) ?? 0) + 1);
 
     this.scheduleNext(projectId, nextCheck);
     this.logger.info({ projectId }, 'Heartbeat reset to immediate');
@@ -200,25 +233,39 @@ export class Scheduler {
 
     const timer = setTimeout(() => {
       this.timers.delete(projectId);
-      this.handleHeartbeat(projectId).catch((err) => {
-        this.logger.error({ err, projectId }, 'Heartbeat handler failed');
-        // Reschedule with backoff even on failure — don't leave the project
-        // without a timer, and don't retry immediately on repeated failures.
-        // applyBackoff itself can throw (e.g., DB closed during shutdown),
-        // so wrap it with a hard fallback. (Code Review #7 M1)
-        try {
-          this.applyBackoff(projectId);
-        } catch (backoffErr) {
-          this.logger.error({ err: backoffErr, projectId }, 'applyBackoff failed — using hard fallback timer');
-          // Guarantee a timer exists even when the DB is unavailable.
-          const fallbackMs = this.configRef.current.heartbeat.base_interval_seconds * 1000;
-          const fallbackTimer = setTimeout(() => {
-            this.timers.delete(projectId);
-            this.handleHeartbeat(projectId).catch(() => { /* next cycle will retry */ });
-          }, fallbackMs);
-          this.timers.set(projectId, fallbackTimer);
-        }
-      });
+      this.inFlight.add(projectId);
+      const epoch = this.resetEpoch.get(projectId) ?? 0;
+
+      this.handleHeartbeat(projectId, epoch)
+        .catch((err) => {
+          // If a reset happened during our async work, its timer is already set
+          if ((this.resetEpoch.get(projectId) ?? 0) !== epoch) {
+            this.logger.info({ projectId }, 'Heartbeat error after concurrent reset — reset timer stands');
+            return;
+          }
+          this.logger.error({ err, projectId }, 'Heartbeat handler failed');
+          // Reschedule with backoff even on failure — don't leave the project
+          // without a timer, and don't retry immediately on repeated failures.
+          // applyBackoff itself can throw (e.g., DB closed during shutdown),
+          // so wrap it with a hard fallback. (Code Review #7 M1)
+          try {
+            this.applyBackoff(projectId);
+          } catch (backoffErr) {
+            this.logger.error({ err: backoffErr, projectId }, 'applyBackoff failed — using hard fallback timer');
+            // Guarantee a timer exists even when the DB is unavailable.
+            const fallbackMs = this.configRef.current.heartbeat.base_interval_seconds * 1000;
+            const fallbackTimer = setTimeout(() => {
+              this.timers.delete(projectId);
+              this.inFlight.add(projectId);
+              const fbEpoch = this.resetEpoch.get(projectId) ?? 0;
+              this.handleHeartbeat(projectId, fbEpoch)
+                .catch(() => { /* next cycle will retry */ })
+                .finally(() => { this.inFlight.delete(projectId); });
+            }, fallbackMs);
+            this.timers.set(projectId, fallbackTimer);
+          }
+        })
+        .finally(() => { this.inFlight.delete(projectId); });
     }, delayMs);
 
     this.timers.set(projectId, timer);
@@ -233,7 +280,9 @@ export class Scheduler {
    *   3. If work found: spawn agents, reset heartbeat.
    *   4. If no work: increment empty checks, apply backoff.
    */
-  private async handleHeartbeat(projectId: string): Promise<void> {
+  private async handleHeartbeat(projectId: string, epochAtStart?: number): Promise<void> {
+    const epoch = epochAtStart ?? (this.resetEpoch.get(projectId) ?? 0);
+
     const project = this.db
       .prepare('SELECT id, project_type_id, status FROM projects WHERE id = ?')
       .get(projectId) as { id: string; project_type_id: string; status: string } | undefined;
@@ -358,6 +407,14 @@ export class Scheduler {
       await this.mergeCompletedWorktrees(projectId);
     }
 
+    // Guard: if resetProject was called while we were doing async work
+    // (e.g., ticket moved to agent column, manual /wake), its 5-second
+    // timer is already set. Don't clobber it with a longer interval.
+    if ((this.resetEpoch.get(projectId) ?? 0) !== epoch) {
+      this.logger.info({ projectId }, 'Heartbeat superseded by concurrent reset — skipping reschedule');
+      return;
+    }
+
     if (foundWork) {
       this.resetToBase(projectId);
     } else {
@@ -480,5 +537,51 @@ export class Scheduler {
       { projectId, emptyChecks, intervalMs, nextCheckIn: `${Math.round(intervalMs / 1000)}s` },
       'Backoff applied',
     );
+  }
+
+  /**
+   * Scan for active projects whose next_check_at is overdue and reschedule
+   * them immediately. Returns the number of projects rescheduled.
+   *
+   * Called on a 30-second interval (the watchdog) and exposed publicly for
+   * tests. Skips projects with a handleHeartbeat already in flight.
+   */
+  watchdogSweep(): number {
+    const now = Date.now();
+    const cutoff = now - Scheduler.WATCHDOG_OVERDUE_GRACE_MS;
+
+    const overdue = this.db
+      .prepare(
+        `SELECT ph.project_id, ph.next_check_at
+         FROM project_heartbeats ph
+         JOIN projects p ON p.id = ph.project_id
+         WHERE p.status = 'active' AND ph.next_check_at < ?`,
+      )
+      .all(cutoff) as Array<{ project_id: string; next_check_at: number }>;
+
+    let rescheduled = 0;
+    for (const row of overdue) {
+      if (this.inFlight.has(row.project_id)) continue;
+
+      this.logger.warn(
+        { projectId: row.project_id, overdueMs: now - row.next_check_at },
+        'Watchdog: overdue heartbeat — rescheduling immediately',
+      );
+      this.scheduleNext(row.project_id, row.next_check_at);
+      rescheduled++;
+    }
+    return rescheduled;
+  }
+
+  private startWatchdog(): void {
+    this.watchdogTimer = setInterval(() => {
+      try {
+        this.watchdogSweep();
+      } catch (err) {
+        this.logger.error({ err }, 'Watchdog sweep failed');
+      }
+    }, Scheduler.WATCHDOG_INTERVAL_MS);
+    // Don't let the watchdog prevent graceful shutdown
+    this.watchdogTimer.unref();
   }
 }
