@@ -142,20 +142,29 @@ function finalizeRun(
   return true;
 }
 
+export const COMPLETED_GRACE_MS = 60_000;
+
 /**
  * Reap detached agent processes that have died or exceeded their timeout.
  * Runs periodically from the daemon's main loop. Handles:
  *   - Processes that died while the daemon was down (or between reaper ticks)
+ *   - Processes whose ticket has moved past the agent's column (agent finished,
+ *     but `claude -p` process won't exit — the hang described in ticket #55)
  *   - Processes that have exceeded their timeout_minutes
  */
 export function reapDetachedRuns(db: Database, logger: Logger): void {
   const runningRuns = db
     .prepare(
       `SELECT ar.id, ar.ticket_id, ar.agent_type_id, ar.pid, ar.started_at,
-              at.timeout_minutes, t.project_id
+              at.timeout_minutes, t.project_id, t.updated_at AS ticket_updated_at,
+              ptc.agent_type_id AS column_agent_type_id
        FROM agent_runs ar
        JOIN agent_types at ON at.id = ar.agent_type_id
        JOIN tickets t ON t.id = ar.ticket_id
+       JOIN projects p ON p.id = t.project_id
+       LEFT JOIN project_type_columns ptc
+         ON ptc.project_type_id = p.project_type_id
+         AND ptc.column_id = t."column"
        WHERE ar.exit_status = 'running' AND ar.pid IS NOT NULL`,
     )
     .all() as Array<{
@@ -166,6 +175,8 @@ export function reapDetachedRuns(db: Database, logger: Logger): void {
     started_at: number;
     timeout_minutes: number;
     project_id: string;
+    ticket_updated_at: number;
+    column_agent_type_id: string | null;
   }>;
 
   for (const run of runningRuns) {
@@ -182,28 +193,55 @@ export function reapDetachedRuns(db: Database, logger: Logger): void {
         'Agent process exited while detached from daemon',
         logger,
       );
-    } else {
-      const timeoutMs = run.timeout_minutes * 60 * 1000;
-      if (Date.now() - run.started_at > timeoutMs) {
-        logger.warn({ runId: run.id, pid: run.pid, timeoutMinutes: run.timeout_minutes }, 'Detached agent exceeded timeout — sending SIGTERM');
-        try {
-          process.kill(run.pid, 'SIGTERM');
-        } catch {
-          // Already dead — next tick will finalize
-        }
-        setTimeout(() => {
-          if (isProcessAlive(run.pid)) {
-            logger.warn({ runId: run.id, pid: run.pid }, 'Detached agent did not exit after SIGTERM — sending SIGKILL');
-            try {
-              process.kill(run.pid, 'SIGKILL');
-            } catch {
-              // Already dead
-            }
-          }
-          finalizeRun(db, run.id, run.ticket_id, run.agent_type_id, run.project_id, 'timeout',
-            `Timed out after ${run.timeout_minutes} minutes (detached)`, logger);
-        }, 10_000);
+      continue;
+    }
+
+    const ticketMovedPastAgent = run.column_agent_type_id !== run.agent_type_id;
+    if (ticketMovedPastAgent && Date.now() - run.ticket_updated_at > COMPLETED_GRACE_MS) {
+      logger.info(
+        { runId: run.id, pid: run.pid, agentType: run.agent_type_id },
+        'Agent completed work but process hanging — sending SIGTERM',
+      );
+      try {
+        process.kill(run.pid, 'SIGTERM');
+      } catch {
+        // Already dead — next tick will finalize
       }
+      setTimeout(() => {
+        if (isProcessAlive(run.pid)) {
+          logger.warn({ runId: run.id, pid: run.pid }, 'Completed agent did not exit after SIGTERM — sending SIGKILL');
+          try {
+            process.kill(run.pid, 'SIGKILL');
+          } catch {
+            // Already dead
+          }
+        }
+        finalizeRun(db, run.id, run.ticket_id, run.agent_type_id, run.project_id, 'success',
+          null, logger);
+      }, 10_000);
+      continue;
+    }
+
+    const timeoutMs = run.timeout_minutes * 60 * 1000;
+    if (Date.now() - run.started_at > timeoutMs) {
+      logger.warn({ runId: run.id, pid: run.pid, timeoutMinutes: run.timeout_minutes }, 'Detached agent exceeded timeout — sending SIGTERM');
+      try {
+        process.kill(run.pid, 'SIGTERM');
+      } catch {
+        // Already dead — next tick will finalize
+      }
+      setTimeout(() => {
+        if (isProcessAlive(run.pid)) {
+          logger.warn({ runId: run.id, pid: run.pid }, 'Detached agent did not exit after SIGTERM — sending SIGKILL');
+          try {
+            process.kill(run.pid, 'SIGKILL');
+          } catch {
+            // Already dead
+          }
+        }
+        finalizeRun(db, run.id, run.ticket_id, run.agent_type_id, run.project_id, 'timeout',
+          `Timed out after ${run.timeout_minutes} minutes (detached)`, logger);
+      }, 10_000);
     }
   }
 }
