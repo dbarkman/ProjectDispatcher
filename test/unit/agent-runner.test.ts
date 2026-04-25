@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import type { Database } from 'better-sqlite3';
 import pino from 'pino';
 import { openDatabase } from '../../src/db/index.js';
@@ -12,6 +12,7 @@ import {
   runAgent,
   getActiveCount,
   getGlobalActiveCount,
+  COMPLETED_GRACE_MS,
 } from '../../src/daemon/agent-runner.js';
 import { configSchema } from '../../src/config.schema.js';
 import { randomUUID } from 'node:crypto';
@@ -206,6 +207,122 @@ describe('reapDetachedRuns', () => {
       ended_at: number;
     };
     expect(run2.ended_at).toBe(firstEndedAt);
+  });
+
+  it('reaps alive process as success when ticket has moved past agent column', async () => {
+    const now = Date.now();
+    vi.useFakeTimers({ now });
+
+    const project = createProject(db, {
+      name: 'MovedTicket',
+      path: '/tmp/moved-ticket-test',
+      projectTypeId: 'software-dev',
+    });
+    const ticket = createTicket(db, { projectId: project.id, title: 'Moved ticket test' });
+    moveTicket(db, ticket.id, { toColumn: 'coding-agent' });
+
+    const runId = randomUUID();
+    db.prepare(
+      `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, exit_status, pid)
+       VALUES (?, ?, 'coding-agent', 'claude-opus-4-6', ?, 'running', ?)`,
+    ).run(runId, ticket.id, now, 1);
+
+    db.prepare(
+      'UPDATE tickets SET claimed_by_run_id = ?, claimed_at = ? WHERE id = ?',
+    ).run(runId, now, ticket.id);
+
+    // Agent finishes work → moves ticket to code-reviewer
+    moveTicket(db, ticket.id, { toColumn: 'code-reviewer' });
+
+    // Backdate updated_at past the grace period
+    db.prepare('UPDATE tickets SET updated_at = ? WHERE id = ?')
+      .run(now - COMPLETED_GRACE_MS - 1000, ticket.id);
+
+    initActiveRuns(db);
+    reapDetachedRuns(db, silentLogger);
+
+    // Before SIGKILL grace period — still running (finalizeRun deferred)
+    const runBefore = db.prepare('SELECT exit_status FROM agent_runs WHERE id = ?').get(runId) as {
+      exit_status: string;
+    };
+    expect(runBefore.exit_status).toBe('running');
+
+    // Advance past 10s SIGKILL grace period
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const runAfter = db.prepare('SELECT exit_status, error_message FROM agent_runs WHERE id = ?').get(runId) as {
+      exit_status: string;
+      error_message: string | null;
+    };
+    expect(runAfter.exit_status).toBe('success');
+    expect(runAfter.error_message).toBeNull();
+
+    vi.useRealTimers();
+  });
+
+  it('does not reap alive process when ticket moved but grace period not elapsed', () => {
+    const project = createProject(db, {
+      name: 'GracePeriod',
+      path: '/tmp/grace-period-test',
+      projectTypeId: 'software-dev',
+    });
+    const ticket = createTicket(db, { projectId: project.id, title: 'Grace period test' });
+    moveTicket(db, ticket.id, { toColumn: 'coding-agent' });
+
+    const runId = randomUUID();
+    const now = Date.now();
+    db.prepare(
+      `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, exit_status, pid)
+       VALUES (?, ?, 'coding-agent', 'claude-opus-4-6', ?, 'running', ?)`,
+    ).run(runId, ticket.id, now, process.pid);
+
+    // Move ticket but keep updated_at recent (within grace period)
+    moveTicket(db, ticket.id, { toColumn: 'code-reviewer' });
+
+    reapDetachedRuns(db, silentLogger);
+
+    const run = db.prepare('SELECT exit_status FROM agent_runs WHERE id = ?').get(runId) as {
+      exit_status: string;
+    };
+    expect(run.exit_status).toBe('running');
+  });
+
+  it('prefers success over timeout when ticket has moved past agent column', async () => {
+    const now = Date.now();
+    vi.useFakeTimers({ now });
+
+    const project = createProject(db, {
+      name: 'SuccessOverTimeout',
+      path: '/tmp/success-over-timeout-test',
+      projectTypeId: 'software-dev',
+    });
+    const ticket = createTicket(db, { projectId: project.id, title: 'Success over timeout test' });
+    moveTicket(db, ticket.id, { toColumn: 'coding-agent' });
+
+    const runId = randomUUID();
+    // started_at 2 hours ago — well past coding-agent 60min timeout
+    db.prepare(
+      `INSERT INTO agent_runs (id, ticket_id, agent_type_id, model, started_at, exit_status, pid)
+       VALUES (?, ?, 'coding-agent', 'claude-opus-4-6', ?, 'running', ?)`,
+    ).run(runId, ticket.id, now - 2 * 60 * 60 * 1000, 1);
+
+    // Agent finished and moved ticket — but process hangs
+    moveTicket(db, ticket.id, { toColumn: 'code-reviewer' });
+    db.prepare('UPDATE tickets SET updated_at = ? WHERE id = ?')
+      .run(now - COMPLETED_GRACE_MS - 1000, ticket.id);
+
+    initActiveRuns(db);
+    reapDetachedRuns(db, silentLogger);
+
+    await vi.advanceTimersByTimeAsync(10_000);
+
+    const run = db.prepare('SELECT exit_status FROM agent_runs WHERE id = ?').get(runId) as {
+      exit_status: string;
+    };
+    // Should be 'success' (ticket moved) not 'timeout' (past timeout_minutes)
+    expect(run.exit_status).toBe('success');
+
+    vi.useRealTimers();
   });
 
   it('finalizes timed-out detached agent as timeout, not crashed', async () => {
