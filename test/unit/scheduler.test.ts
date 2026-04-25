@@ -148,3 +148,90 @@ describe('Scheduler.resetProject()', () => {
     expect(state!.lastWakeAt).toBeGreaterThan(0);
   });
 });
+
+describe('Watchdog: overdue heartbeat detection', () => {
+  it('reschedules projects whose next_check_at is overdue', () => {
+    const p = createProject(db, { name: 'Stale', path: '/stale', projectTypeId: 'software-dev' });
+    scheduler.start();
+
+    // Simulate: set next_check_at to 60 seconds in the past (well past the 10s grace)
+    const past = Date.now() - 60_000;
+    db.prepare('UPDATE project_heartbeats SET next_check_at = ? WHERE project_id = ?')
+      .run(past, p.id);
+
+    const count = scheduler.watchdogSweep();
+    expect(count).toBe(1);
+
+    // Timer should still be set (rescheduled with delay=0)
+    const state = scheduler.getProjectState(p.id);
+    expect(state).not.toBeNull();
+    expect(state!.isScheduled).toBe(true);
+  });
+
+  it('ignores heartbeats that are not yet overdue', () => {
+    createProject(db, { name: 'Future', path: '/future', projectTypeId: 'software-dev' });
+    scheduler.start();
+
+    // next_check_at is in the future (set by createProject)
+    const count = scheduler.watchdogSweep();
+    expect(count).toBe(0);
+  });
+
+  it('skips projects within the 10-second grace period', () => {
+    const p = createProject(db, { name: 'Grace', path: '/grace', projectTypeId: 'software-dev' });
+    scheduler.start();
+
+    // Set next_check_at to 5 seconds ago — within the 10s grace period
+    const recent = Date.now() - 5_000;
+    db.prepare('UPDATE project_heartbeats SET next_check_at = ? WHERE project_id = ?')
+      .run(recent, p.id);
+
+    const count = scheduler.watchdogSweep();
+    expect(count).toBe(0);
+  });
+
+  it('skips archived projects even if overdue', () => {
+    const p = createProject(db, { name: 'Archived', path: '/archived', projectTypeId: 'software-dev' });
+    db.prepare("UPDATE projects SET status = 'archived' WHERE id = ?").run(p.id);
+    scheduler.start();
+
+    const past = Date.now() - 60_000;
+    db.prepare('UPDATE project_heartbeats SET next_check_at = ? WHERE project_id = ?')
+      .run(past, p.id);
+
+    const count = scheduler.watchdogSweep();
+    expect(count).toBe(0);
+  });
+
+  it('catches multiple overdue projects in one sweep', () => {
+    const p1 = createProject(db, { name: 'Stale1', path: '/s1', projectTypeId: 'software-dev' });
+    const p2 = createProject(db, { name: 'Stale2', path: '/s2', projectTypeId: 'software-dev' });
+    createProject(db, { name: 'Healthy', path: '/h', projectTypeId: 'software-dev' });
+    scheduler.start();
+
+    const past = Date.now() - 60_000;
+    db.prepare('UPDATE project_heartbeats SET next_check_at = ? WHERE project_id = ?').run(past, p1.id);
+    db.prepare('UPDATE project_heartbeats SET next_check_at = ? WHERE project_id = ?').run(past, p2.id);
+
+    const count = scheduler.watchdogSweep();
+    expect(count).toBe(2);
+  });
+});
+
+describe('Startup: overdue heartbeat handling', () => {
+  it('schedules overdue heartbeats with delay=0 on start', () => {
+    const p = createProject(db, { name: 'Overdue', path: '/overdue', projectTypeId: 'software-dev' });
+
+    // Set next_check_at to the past before start()
+    const past = Date.now() - 120_000;
+    db.prepare('UPDATE project_heartbeats SET next_check_at = ? WHERE project_id = ?')
+      .run(past, p.id);
+
+    scheduler.start();
+
+    // Timer should be set (will fire with delay=0)
+    const state = scheduler.getProjectState(p.id);
+    expect(state).not.toBeNull();
+    expect(state!.isScheduled).toBe(true);
+  });
+});
