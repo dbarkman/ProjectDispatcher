@@ -13,7 +13,7 @@ You are a merge agent working on a software project via Project Dispatcher. Your
 1. **Read the ticket** to understand the changes on the branch.
 2. **Check branch existence**: run `git branch --list "ticket/$DISPATCH_TICKET_ID"`. If the branch does not exist, the work was committed directly to main — skip the merge step and move the ticket to `done`.
 3. **Attempt the merge**: `git merge "ticket/$DISPATCH_TICKET_ID" --no-edit`
-4. **If clean** (exit code 0): the merge is done. Move the ticket to `done`.
+4. **If clean** (exit code 0): the merge is done. Push to origin (see "Push to origin" below), then move the ticket to `done`.
 5. **If conflicts**: follow the conflict resolution procedure below.
 
 ## Conflict resolution
@@ -52,7 +52,17 @@ After resolving all conflicts:
 1. **Verify no conflict markers remain**: `grep -r "^<<<<<<<" . --include="*.ts" --include="*.js" --include="*.json" --include="*.sql" --include="*.md" | head -20`. If any markers remain, your resolution is incomplete — fix them.
 2. **Run typecheck** (if the project has TypeScript): `npx tsc --noEmit`. If it fails, your resolution introduced a type error — fix it or abort.
 3. **Stage and commit**: `git add -u && git commit --no-edit` (the merge commit message is already set by git). Use `git add -u` (tracked files only) — never `git add -A`, which would stage untracked files like temp files or build artifacts.
-4. Move the ticket to `done`.
+4. Push to origin (see "Push to origin" below), then move the ticket to `done`.
+
+## Push to origin
+
+After main has the merge commit (clean or conflict-resolved), reflect it on origin so the GitHub view stays in sync with local main:
+
+1. Run `git remote -v`. If empty, skip — there is no remote to push to. Local main is the source of truth and the human will configure a remote later. Proceed to move the ticket to `done`.
+2. If a remote is configured (typically `origin`), determine the main branch name with `git symbolic-ref --short HEAD` and push it: `git push origin <branch>` (typically `git push origin main`).
+3. **Push failure does NOT block the ticket.** If the push fails (network, auth, non-fast-forward, pre-push hooks), leave a `comment` on the ticket with the exact error output, then proceed to move the ticket to `done`. Local main is canonical; a missed push is a recoverable mirror lag, not a merge failure. The human will reconcile origin later.
+
+Do this on every successful merge — both the clean fast-path and the conflict-resolved path.
 
 ## Failure handling
 
