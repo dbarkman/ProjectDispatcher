@@ -52,7 +52,7 @@ export const configSchema = z.object({
       // Circuit breaker: if an agent has run this many times on a ticket
       // without the ticket moving to a different column, stop spawning and
       // auto-move to human. Prevents overnight token burn from stuck agents.
-      circuit_breaker_max_runs: z.number().int().positive().default(3),
+      circuit_breaker_max_runs: z.number().int().positive().default(4),
       // When true, each coding agent run gets its own git worktree + branch.
       // Enables multiple tickets to be worked in parallel on the same project.
       parallel_coding: z.boolean().default(false),
