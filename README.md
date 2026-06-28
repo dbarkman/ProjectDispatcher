@@ -84,7 +84,7 @@ Four moving parts:
 
 Agents work in **git worktrees** when `parallel_coding` is on (Settings → Agents → Parallel coding). Each coding-agent ticket gets its own branch `ticket/<id>` in its own worktree directory. When the ticket hits Done, the daemon merges the branch cleanly onto main via a direct `git merge`; merge conflicts route the ticket back to Human with a specific error.
 
-A **circuit breaker** (configurable, default 3 runs) auto-routes a ticket to Human if an agent runs that many times on the same ticket without moving it to a new column. This stops run-away token burn when an agent is stuck and does not know it.
+A **circuit breaker** (configurable, default 4 runs) auto-routes a ticket to Human if an agent runs that many times on the same ticket without moving it to a new column. This stops run-away token burn when an agent is stuck and does not know it.
 
 Config lives at `~/Development/.tasks/config.json`. Most fields hot-reload — edit via `http://localhost:5757/ui/settings` and the running daemon picks them up without a restart. A few (port, binary path) need a restart and are labeled as such.
 
@@ -145,7 +145,7 @@ dispatch uninstall              # stop daemon, unlink bin, optionally delete .ta
 Project Dispatcher spawns `claude -p` subprocesses that can write to your codebase. A few things keep it bounded:
 
 - **Per-project and global concurrency caps** (default 3 per project, 10 global). Hot-reloadable from Settings.
-- **Circuit breaker** on stuck tickets (default 3 runs without progress → auto-route to Human).
+- **Circuit breaker** on stuck tickets (default 4 runs without progress → auto-route to Human).
 - **Worktree isolation** when `parallel_coding` is on — each agent's changes land on its own branch, never directly on main.
 - **Merge conflicts route to Human**, not "force push to resolve".
 - **Subprocess env scrubbing** — agents run with a minimal environment, not the daemon's full env.
